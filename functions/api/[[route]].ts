@@ -123,11 +123,23 @@ app.post('/generate-prompt', async (c) => {
     model: "gemini-3.1-pro-preview",
     contents: [{ parts: [{ text: poem }] }],
     config: {
-      systemInstruction: "你是一位精通中国古典诗词的导演，将诗词转化为电影分镜脚本。输出 JSON: {chinese, english}",
+      systemInstruction: "你是一位精通中国古典诗词的导演，将诗词转化为电影分镜脚本。输出 JSON: {chinese, english}。其中 english 必须是纯文本描述，用于图像生成提示词。",
       responseMimeType: "application/json",
     },
   });
-  return c.json(JSON.parse(response.text || "{}"));
+
+  try {
+    const rawData = JSON.parse(response.text || "{}");
+    // 鲁棒性处理：如果 AI 返回了复杂对象而非字符串，将其转化为字符串
+    const processedData = {
+      chinese: typeof rawData.chinese === 'object' ? JSON.stringify(rawData.chinese) : (rawData.chinese || ""),
+      english: typeof rawData.english === 'object' ? JSON.stringify(rawData.english) : (rawData.english || "")
+    };
+    return c.json(processedData);
+  } catch (e) {
+    console.error("JSON Parse Error:", e);
+    return c.json({ chinese: "解析失败", english: "Analysis failed" });
+  }
 });
 
 // 6. 视频生成接口 (受配额限制)
@@ -147,10 +159,16 @@ app.post('/generate-video', async (c) => {
 
 // 7. 视频状态轮询接口
 app.post('/poll-video', async (c) => {
-  const { operation } = await c.req.json();
-  const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
-  const result = await ai.operations.getVideosOperation({ operation });
-  return c.json(result);
+  try {
+    const { operation } = await c.req.json();
+    const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
+    // 确保传入的是完整的 operation 对象
+    const result = await ai.operations.getVideosOperation({ operation });
+    return c.json(result);
+  } catch (error: any) {
+    console.error("Poll Video Error:", error);
+    return c.json({ error: `状态查询失败: ${error.message}`, details: error }, 500);
+  }
 });
 
 // 8. 图像生成接口
@@ -215,9 +233,16 @@ app.post('/generate-speech', async (c) => {
     if (base64Audio) {
       return c.json({ base64Audio });
     }
-    return c.json({ error: "模型未返回音频数据，请检查 API Key 权限或稍后再试" }, 500);
+    return c.json({ error: "模型未返回音频数据" }, 500);
   } catch (error: any) {
     console.error("TTS Error:", error);
+    // 专门处理 404 错误
+    if (error.message?.includes('404') || error.status === 404) {
+      return c.json({ 
+        error: "语音模型 (TTS) 暂不可用", 
+        details: "您的 API Key 暂无 gemini-2.5-flash-preview-tts 模型的访问权限，请在 Google AI Studio 检查模型可用性。" 
+      }, 404);
+    }
     return c.json({ error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, details: error }, 500);
   }
 });
