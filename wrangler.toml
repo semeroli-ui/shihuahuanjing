@@ -1,0 +1,18 @@
+name = "poetic-vision-ai"
+compatibility_date = "2024-03-20"
+compatibility_flags = ["nodejs_compat"]
+
+[pages_build_config]
+build_command = "npm run build"
+destination_dir = "dist"
+
+[vars]
+# 环境变量名（请在 Cloudflare 控制台设置对应的值）
+# GEMINI_PRO_API_KEY = "..."
+# GOOGLE_AI_STUDIO_API_KEY = "..."
+APP_ENV = "production"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "poetic_db"
+database_id = "YOUR_D1_DATABASE_ID" # 部署后替换为真实的 ID
