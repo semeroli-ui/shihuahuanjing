@@ -160,29 +160,34 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
   
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.1-flash-image-preview',
-    contents: [{ 
-      parts: [{ text: `A cinematic masterpiece of Chinese traditional painting. ${prompt}. Ultra-high definition, 4k, photorealistic, intricate details, elegant composition.` }] 
-    }],
-    config: {
-      imageConfig: {
-        aspectRatio: "16:9",
-        imageSize: "4K"
-      }
-    },
-  });
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-image-preview',
+      contents: [{ 
+        parts: [{ text: `A cinematic masterpiece of Chinese traditional painting. ${prompt}. Ultra-high definition, 4k, photorealistic, intricate details, elegant composition.` }] 
+      }],
+      config: {
+        imageConfig: {
+          aspectRatio: "16:9",
+          imageSize: "4K"
+        }
+      },
+    });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
-    if (part.inlineData) {
-      return c.json({
-        generatedImages: [{
-          image: { imageBytes: part.inlineData.data }
-        }]
-      });
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return c.json({
+          generatedImages: [{
+            image: { imageBytes: part.inlineData.data }
+          }]
+        });
+      }
     }
+    return c.json({ error: "模型未返回图像数据" }, 500);
+  } catch (error: any) {
+    console.error("Image Gen Error:", error);
+    return c.json({ error: `图像生成失败: ${error.message || '未知错误'}`, details: error }, 500);
   }
-  return c.json({ error: "模型未返回图像数据" }, 500);
 });
 
 // 9. 诗词吟诵接口 (TTS)
@@ -190,24 +195,29 @@ app.post('/generate-speech', async (c) => {
   const { text } = await c.req.json();
   const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
   
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Fenrir' }
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Fenrir' }
+          }
         }
       }
-    }
-  });
+    });
 
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (base64Audio) {
-    return c.json({ base64Audio });
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+      return c.json({ base64Audio });
+    }
+    return c.json({ error: "未生成音频数据" }, 500);
+  } catch (error: any) {
+    console.error("TTS Error:", error);
+    return c.json({ error: `吟诵生成失败: ${error.message || '未知错误'}`, details: error }, 500);
   }
-  return c.json({ error: "未生成音频数据" }, 500);
 });
 
 // 10. 视频下载代理接口

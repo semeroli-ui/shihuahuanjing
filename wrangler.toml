@@ -15,4 +15,4 @@ APP_ENV = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "poetic_db"
-database_id = "5e955865-c254-4cbc-b16a-2387113c629d" # 部署后替换为真实的 ID
+database_id = "5e955865-c254-4cbc-b16a-2387113c629d"
