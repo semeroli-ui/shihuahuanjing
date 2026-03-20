@@ -60,8 +60,8 @@ app.get('/health', async (c) => {
 app.post('/admin/login', async (c) => {
   const { email, password } = await c.req.json();
   
-  // 初始账号检查
-  if (email === 'lablabe@qq.com' && password === 'admin123654') {
+  // 初始账号检查 (增加当前用户邮箱)
+  if ((email === 'lablabe@qq.com' || email === 'AS2008FG@gmail.com') && password === 'admin123654') {
     setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
       path: '/',
       secure: true,
@@ -192,6 +192,8 @@ app.post('/generate-image', async (c) => {
 
 // 9. 诗词吟诵接口 (TTS)
 app.post('/generate-speech', async (c) => {
+  if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
+  
   const { text } = await c.req.json();
   const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
   
@@ -200,7 +202,7 @@ app.post('/generate-speech', async (c) => {
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO],
+        responseModalities: ['AUDIO'], // 使用字符串形式增强兼容性
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Fenrir' }
@@ -213,10 +215,10 @@ app.post('/generate-speech', async (c) => {
     if (base64Audio) {
       return c.json({ base64Audio });
     }
-    return c.json({ error: "未生成音频数据" }, 500);
+    return c.json({ error: "模型未返回音频数据，请检查 API Key 权限或稍后再试" }, 500);
   } catch (error: any) {
     console.error("TTS Error:", error);
-    return c.json({ error: `吟诵生成失败: ${error.message || '未知错误'}`, details: error }, 500);
+    return c.json({ error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, details: error }, 500);
   }
 });
 
