@@ -13,6 +13,15 @@ const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
 // --- 辅助函数 ---
 
+// 获取 API Key (支持逗号分隔的多个 Key 轮询)
+const getApiKey = (keyString: string | undefined) => {
+  if (!keyString) return null;
+  const keys = keyString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  if (keys.length === 0) return null;
+  // 随机选择一个 Key 以分散负载
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
 // 检查是否是管理员
 const isAdmin = async (c: any) => {
   const token = getCookie(c, 'admin_token');
@@ -48,8 +57,10 @@ const checkQuota = async (c: any) => {
 // 1. 健康检查与状态
 app.get('/health', async (c) => {
   const loggedIn = await isAdmin(c);
+  const proKeys = c.env.GEMINI_PRO_API_KEY ? c.env.GEMINI_PRO_API_KEY.split(',').filter(k => k.trim().length > 0).length : 0;
   return c.json({ 
-    hasProKey: !!c.env.GEMINI_PRO_API_KEY, // 用于诗词解析 (免费层)
+    hasProKey: proKeys > 0, // 用于诗词解析 (免费层)
+    proKeyCount: proKeys,
     hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY, // 用于 Veo/Imagen/TTS (高权限)
     hasDB: !!c.env.DB,
     isAdmin: loggedIn
@@ -118,8 +129,8 @@ app.post('/generate-prompt', async (c) => {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
     
     const { poem } = await c.req.json();
-    // 优先使用免费层的 GEMINI_PRO_API_KEY，节省高权限 Key 的额度
-    const apiKey = c.env.GEMINI_PRO_API_KEY || c.env.GOOGLE_AI_STUDIO_API_KEY;
+    // 优先从 GEMINI_PRO_API_KEY 中获取一个 Key (支持多 Key 轮询)
+    const apiKey = getApiKey(c.env.GEMINI_PRO_API_KEY) || c.env.GOOGLE_AI_STUDIO_API_KEY;
     if (!apiKey) return c.json({ error: "未配置 API Key (需要 GEMINI_PRO_API_KEY)" }, 500);
 
     const ai = new GoogleGenAI({ apiKey });
@@ -128,7 +139,12 @@ app.post('/generate-prompt', async (c) => {
       model: "gemini-3.1-pro-preview",
       contents: [{ parts: [{ text: poem }] }],
       config: {
-        systemInstruction: "你是一位精通中国古典诗词的导演，将诗词转化为电影分镜脚本。输出 JSON: {chinese, english}。其中 chinese 是对诗句意境的优美中文描述，english 必须是纯文本描述，用于图像生成提示词。",
+        systemInstruction: `你是一位集“中国古典诗词研究专家”、“美学视觉专家”与“奥斯卡金像奖导演”于一身的跨界大师。
+你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本。
+
+输出必须为严格的 JSON 格式：{"chinese": "...", "english": "..."}
+- chinese: 对诗句意境的优美中文描述，融合文学性与视觉美感。
+- english: 专门为 Veo 视频生成模型设计的纯英文提示词。要求包含：镜头语言（如 Close-up, Slow-motion）、光影描述（如 Cinematic lighting, Golden hour）、艺术风格（如 Traditional Chinese ink wash style, Photorealistic）以及具体的画面细节。`,
         responseMimeType: "application/json",
       },
     });

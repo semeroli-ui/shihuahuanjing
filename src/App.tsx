@@ -887,7 +887,7 @@ export default function App() {
                         <div className="flex justify-between border-b border-zen-ink/5 pb-1">
                           <span>免费层 (解析):</span> 
                           <span className={healthStatus.hasProKey ? "text-green-600" : "text-amber-600"}>
-                            {healthStatus.hasProKey ? "已就绪" : "未配置 (将使用高权限 Key)"}
+                            {healthStatus.hasProKey ? `已就绪 (${healthStatus.proKeyCount}个 Key)` : "未配置 (将使用高权限 Key)"}
                           </span>
                         </div>
                         <div className="flex justify-between border-b border-zen-ink/5 pb-1">
