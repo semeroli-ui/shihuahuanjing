@@ -219,13 +219,13 @@ app.post('/poll-video', async (c) => {
     
     // 确保传入的是正确的参数格式
     // SDK getVideosOperation 期望的是 { operation: string | VideoGenerationOperation }
-    // 但某些版本可能要求对象必须包含 name 属性
+    // 传递字符串最为稳妥，避免 SDK 尝试在普通对象上调用内部方法
     const opName = typeof operation === 'object' ? (operation.name || operation) : operation;
     
-    console.log("Polling operation name:", opName);
+    console.log("Polling operation name (string):", opName);
     
     const result = await ai.operations.getVideosOperation({ 
-      operation: { name: opName } as any
+      operation: opName 
     });
     return c.json(result);
   } catch (error: any) {
@@ -289,9 +289,9 @@ app.post('/generate-speech', async (c) => {
     
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
+      contents: [{ parts: [{ text: `请吟诵：${text}` }] }],
       config: {
-        responseModalities: ['AUDIO'] as any, // 使用字符串并强制类型以规避可能的枚举问题
+        responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Fenrir' }
@@ -300,9 +300,9 @@ app.post('/generate-speech', async (c) => {
       }
     });
 
-    console.log("TTS Response received:", JSON.stringify(response).substring(0, 200));
-    
-    const part = response.candidates?.[0]?.content?.parts?.[0];
+    console.log("TTS Response Candidates:", response.candidates?.length);
+    const candidate = response.candidates?.[0];
+    const part = candidate?.content?.parts?.find(p => p.inlineData);
     const base64Audio = part?.inlineData?.data;
     if (base64Audio) {
       return c.json({ base64Audio });
