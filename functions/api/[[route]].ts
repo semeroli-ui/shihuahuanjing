@@ -179,30 +179,51 @@ app.post('/generate-prompt', async (c) => {
 
 // 6. 视频生成接口 (受配额限制)
 app.post('/generate-video', async (c) => {
-  if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
-  
-  const { prompt } = await c.req.json();
-  const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
-  
-  const operation = await ai.models.generateVideos({
-    model: 'veo-3.1-generate-preview',
-    prompt: prompt,
-    config: { numberOfVideos: 1, resolution: '1080p', aspectRatio: '16:9' }
-  });
-  return c.json(operation);
+  try {
+    if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
+    
+    const { prompt } = await c.req.json();
+    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置高权限 API Key (GOOGLE_AI_STUDIO_API_KEY)" }, 500);
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const operation = await ai.models.generateVideos({
+      model: 'veo-3.1-generate-preview',
+      prompt: prompt,
+      config: { numberOfVideos: 1, resolution: '1080p', aspectRatio: '16:9' }
+    });
+    return c.json(operation);
+  } catch (error: any) {
+    console.error("Generate Video Error:", error);
+    return c.json({ error: `视频生成请求失败: ${error.message || '未知错误'}`, details: error }, 500);
+  }
 });
 
 // 7. 视频状态轮询接口
 app.post('/poll-video', async (c) => {
   try {
     const { operation } = await c.req.json();
-    const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
-    // 确保传入的是完整的 operation 对象
-    const result = await ai.operations.getVideosOperation({ operation });
+    if (!operation) return c.json({ error: "缺少 operation 参数" }, 400);
+    
+    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置高权限 API Key (GOOGLE_AI_STUDIO_API_KEY)" }, 500);
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // 确保传入的是正确的参数格式，支持对象或字符串
+    // 优先使用 operation.name 如果它是一个对象
+    const opParam = typeof operation === 'object' ? (operation.name || operation) : operation;
+    const result = await ai.operations.getVideosOperation({ 
+      operation: opParam 
+    });
     return c.json(result);
   } catch (error: any) {
     console.error("Poll Video Error:", error);
-    return c.json({ error: `状态查询失败: ${error.message}`, details: error }, 500);
+    return c.json({ 
+      error: `状态查询失败: ${error.message || '未知错误'}`, 
+      details: error 
+    }, 500);
   }
 });
 

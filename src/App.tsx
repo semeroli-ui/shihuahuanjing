@@ -281,11 +281,12 @@ export default function App() {
           }
         } catch (e: any) {
           console.error('Poll attempt failed:', e);
-          if (e.message?.includes('查询频率过高') || e.message?.includes('429')) {
+          const errorMsg = e.message || '未知错误';
+          if (errorMsg.includes('查询频率过高') || errorMsg.includes('429')) {
             setVideoStatus('查询频率过高，正在自动重试...');
             setTimeout(poll, 30000); 
           } else {
-            setVideoStatus(`视频生成出错: ${e.message || '未知错误'}`);
+            setVideoStatus(`视频生成出错: ${errorMsg}`);
             setIsGeneratingVideo(false);
           }
         }
