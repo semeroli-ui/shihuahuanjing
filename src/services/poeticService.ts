@@ -92,7 +92,8 @@ export class PoeticService {
     
     const data = await res.json().catch(() => ({})) as any;
     if (!res.ok) {
-      throw new Error(data.error || data.details || "吟诵生成失败");
+      const detailStr = typeof data.details === 'object' ? JSON.stringify(data.details) : (data.details || "");
+      throw new Error(data.error || detailStr || "吟诵生成失败");
     }
     
     const { base64Audio, error } = data as { base64Audio?: string; error?: string };

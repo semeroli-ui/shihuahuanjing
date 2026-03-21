@@ -219,19 +219,21 @@ app.post('/poll-video', async (c) => {
     
     // 确保传入的是正确的参数格式
     // SDK getVideosOperation 期望的是 { operation: string | VideoGenerationOperation }
-    const opValue = typeof operation === 'object' ? (operation.name || operation) : operation;
+    // 但某些版本可能要求对象必须包含 name 属性
+    const opName = typeof operation === 'object' ? (operation.name || operation) : operation;
     
-    console.log("Polling operation value:", opValue);
+    console.log("Polling operation name:", opName);
     
     const result = await ai.operations.getVideosOperation({ 
-      operation: opValue 
+      operation: { name: opName } as any
     });
     return c.json(result);
   } catch (error: any) {
     console.error("Poll Video Error:", error);
+    const errorDetail = error.response?.data || error.details || error.message || error;
     return c.json({ 
       error: `状态查询失败: ${error.message || '未知错误'}`, 
-      details: error 
+      details: errorDetail 
     }, 500);
   }
 });
@@ -289,7 +291,7 @@ app.post('/generate-speech', async (c) => {
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO],
+        responseModalities: ['AUDIO'] as any, // 使用字符串并强制类型以规避可能的枚举问题
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Fenrir' }
@@ -298,8 +300,10 @@ app.post('/generate-speech', async (c) => {
       }
     });
 
-    console.log("TTS Response received");
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    console.log("TTS Response received:", JSON.stringify(response).substring(0, 200));
+    
+    const part = response.candidates?.[0]?.content?.parts?.[0];
+    const base64Audio = part?.inlineData?.data;
     if (base64Audio) {
       return c.json({ base64Audio });
     }
@@ -311,19 +315,25 @@ app.post('/generate-speech', async (c) => {
     return c.json({ error: `模型未返回音频数据 (原因: ${finishReason || '未知'})` }, 500);
   } catch (error: any) {
     console.error("TTS Error:", error);
+    const errorDetail = error.response?.data || error.details || error.message || error;
+    
     // 专门处理 404 错误 (模型不可用)
-    if (error.message?.includes('404') || error.status === 404 || error.message?.includes('not found')) {
+    if (error.message?.includes('404') || error.status === 404 || error.message?.toLowerCase().includes('not found')) {
       return c.json({ 
         error: "语音模型 (TTS) 暂不可用", 
         details: "您的 API Key 暂无 gemini-2.5-flash-preview-tts 模型的访问权限，或者该模型在当前区域不可用。请在 Google AI Studio 检查模型可用性。" 
       }, 404);
     }
     
-    // 如果是 500 但包含特定错误信息
-    if (error.message?.includes('permission') || error.message?.includes('API key')) {
-      return c.json({ error: "API Key 权限不足，无法使用 TTS 功能" }, 403);
+    // 如果是权限错误
+    if (error.message?.includes('permission') || error.message?.includes('API key') || error.status === 403) {
+      return c.json({ error: "API Key 权限不足，无法使用 TTS 功能", details: errorDetail }, 403);
     }
-    return c.json({ error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, details: error }, 500);
+    
+    return c.json({ 
+      error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, 
+      details: errorDetail 
+    }, 500);
   }
 });
 
