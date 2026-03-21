@@ -56,6 +56,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [healthStatus, setHealthStatus] = useState<any>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
