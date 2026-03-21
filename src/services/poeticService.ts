@@ -11,7 +11,10 @@ export class PoeticService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ poem })
     });
-    if (!res.ok) throw new Error("后端解析失败");
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || "后端解析失败");
+    }
     return await res.json();
   }
 
@@ -22,7 +25,10 @@ export class PoeticService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
     });
-    if (!res.ok) throw new Error("后端生成请求失败");
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || "后端生成请求失败");
+    }
     return await res.json();
   }
 
@@ -80,9 +86,13 @@ export class PoeticService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
     });
-    if (!res.ok) throw new Error("吟诵生成失败");
     
-    const { base64Audio, error } = await res.json() as { base64Audio?: string; error?: string };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || data.details || "吟诵生成失败");
+    }
+    
+    const { base64Audio, error } = data as { base64Audio?: string; error?: string };
     if (error) throw new Error(error);
 
     if (base64Audio) {

@@ -19,6 +19,7 @@ import {
   Book,
   Bookmark,
   Trash2,
+  RefreshCw,
   Image as ImageIcon
 } from 'lucide-react';
 import { poeticService } from './services/poeticService';
@@ -55,7 +56,21 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  const checkHealth = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setHealthStatus(data);
+    } catch (e) {
+      console.error("Health check failed", e);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   useEffect(() => {
     const checkKeyStatus = async () => {
@@ -165,6 +180,9 @@ export default function App() {
     setStatusMessage('正在解析诗词意境...');
     try {
       const promptObj = await poeticService.generatePrompt(poem);
+      if (!promptObj.chinese && !promptObj.english) {
+        throw new Error("模型未能生成有效的解析内容，请尝试更换诗句或重试。");
+      }
       setVisualPrompt(promptObj);
       setStatusMessage('解析成功！');
       
@@ -849,6 +867,48 @@ export default function App() {
                     >
                       确认修改
                     </button>
+                  </div>
+                </section>
+
+                <section className="pt-12 border-t border-zen-ink/5 space-y-6">
+                  <h3 className="text-xs uppercase tracking-[0.4em] text-zen-accent font-bold">系统状态</h3>
+                  <div className="p-4 bg-zen-paper/50 rounded-lg space-y-3 border border-zen-ink/5">
+                    <button 
+                      onClick={checkHealth}
+                      disabled={isCheckingHealth}
+                      className="text-xs text-zen-accent hover:underline flex items-center gap-2"
+                    >
+                      {isCheckingHealth ? <Loader2 className="animate-spin" size={12} /> : <RefreshCw size={12} />}
+                      检查后端连接与 API Key
+                    </button>
+                    {healthStatus && (
+                      <div className="grid grid-cols-1 gap-2 text-[10px] font-mono">
+                        <div className="flex justify-between border-b border-zen-ink/5 pb-1">
+                          <span>免费层 (解析):</span> 
+                          <span className={healthStatus.hasProKey ? "text-green-600" : "text-amber-600"}>
+                            {healthStatus.hasProKey ? "已就绪" : "未配置 (将使用高权限 Key)"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-zen-ink/5 pb-1">
+                          <span>高权限 (Veo/TTS):</span> 
+                          <span className={healthStatus.hasStudioKey ? "text-green-600" : "text-red-600 font-bold"}>
+                            {healthStatus.hasStudioKey ? "已就绪" : "未配置 (核心功能将受限)"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-zen-ink/5 pb-1">
+                          <span>数据库:</span> 
+                          <span className={healthStatus.hasDB ? "text-green-600" : "text-red-600 font-bold"}>
+                            {healthStatus.hasDB ? "正常" : "异常"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>管理员:</span> 
+                          <span className={healthStatus.isAdmin ? "text-green-600" : "text-red-600 font-bold"}>
+                            {healthStatus.isAdmin ? "已登录" : "未登录"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </section>
 

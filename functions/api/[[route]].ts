@@ -49,8 +49,8 @@ const checkQuota = async (c: any) => {
 app.get('/health', async (c) => {
   const loggedIn = await isAdmin(c);
   return c.json({ 
-    hasProKey: !!c.env.GEMINI_PRO_API_KEY,
-    hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY,
+    hasProKey: !!c.env.GEMINI_PRO_API_KEY, // 用于诗词解析 (免费层)
+    hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY, // 用于 Veo/Imagen/TTS (高权限)
     hasDB: !!c.env.DB,
     isAdmin: loggedIn
   });
@@ -114,31 +114,50 @@ app.post('/admin/logout', (c) => {
 
 // 5. 诗词解析接口 (受配额限制)
 app.post('/generate-prompt', async (c) => {
-  if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
-  
-  const { poem } = await c.req.json();
-  const ai = new GoogleGenAI({ apiKey: c.env.GEMINI_PRO_API_KEY });
-  
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: [{ parts: [{ text: poem }] }],
-    config: {
-      systemInstruction: "你是一位精通中国古典诗词的导演，将诗词转化为电影分镜脚本。输出 JSON: {chinese, english}。其中 english 必须是纯文本描述，用于图像生成提示词。",
-      responseMimeType: "application/json",
-    },
-  });
-
   try {
-    const rawData = JSON.parse(response.text || "{}");
+    if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
+    
+    const { poem } = await c.req.json();
+    // 优先使用免费层的 GEMINI_PRO_API_KEY，节省高权限 Key 的额度
+    const apiKey = c.env.GEMINI_PRO_API_KEY || c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 API Key (需要 GEMINI_PRO_API_KEY)" }, 500);
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-pro-preview",
+      contents: [{ parts: [{ text: poem }] }],
+      config: {
+        systemInstruction: "你是一位精通中国古典诗词的导演，将诗词转化为电影分镜脚本。输出 JSON: {chinese, english}。其中 chinese 是对诗句意境的优美中文描述，english 必须是纯文本描述，用于图像生成提示词。",
+        responseMimeType: "application/json",
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      console.error("Empty response from Gemini Pro");
+      return c.json({ chinese: "解析失败：模型返回内容为空", english: "Analysis failed: empty response" });
+    }
+
+    const rawData = JSON.parse(text);
     // 鲁棒性处理：如果 AI 返回了复杂对象而非字符串，将其转化为字符串
     const processedData = {
       chinese: typeof rawData.chinese === 'object' ? JSON.stringify(rawData.chinese) : (rawData.chinese || ""),
       english: typeof rawData.english === 'object' ? JSON.stringify(rawData.english) : (rawData.english || "")
     };
+    
+    // 如果解析出来的字段还是空的，给个默认提示
+    if (!processedData.chinese) processedData.chinese = "未能解析出意境描述";
+    if (!processedData.english) processedData.english = "Failed to generate visual prompt";
+
     return c.json(processedData);
-  } catch (e) {
-    console.error("JSON Parse Error:", e);
-    return c.json({ chinese: "解析失败", english: "Analysis failed" });
+  } catch (e: any) {
+    console.error("Generate Prompt Error:", e);
+    return c.json({ 
+      chinese: `解析出错: ${e.message}`, 
+      english: "Analysis error",
+      error: e.message 
+    }, 500);
   }
 });
 
@@ -210,12 +229,16 @@ app.post('/generate-image', async (c) => {
 
 // 9. 诗词吟诵接口 (TTS)
 app.post('/generate-speech', async (c) => {
-  if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
-  
-  const { text } = await c.req.json();
-  const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
-  
   try {
+    if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
+    
+    const { text } = await c.req.json();
+    // 必须使用高权限的 STUDIO KEY，免费层通常不支持 TTS
+    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置高权限 API Key (需要 GOOGLE_AI_STUDIO_API_KEY 以支持 TTS)" }, 500);
+
+    const ai = new GoogleGenAI({ apiKey });
+    
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `请用深情且富有磁性的声音吟诵这首诗：${text}` }] }],
@@ -233,7 +256,12 @@ app.post('/generate-speech', async (c) => {
     if (base64Audio) {
       return c.json({ base64Audio });
     }
-    return c.json({ error: "模型未返回音频数据" }, 500);
+    
+    // 如果没有音频数据，看看是不是有报错信息
+    const finishReason = response.candidates?.[0]?.finishReason;
+    console.error("TTS No Audio. Finish Reason:", finishReason);
+    
+    return c.json({ error: `模型未返回音频数据 (原因: ${finishReason || '未知'})` }, 500);
   } catch (error: any) {
     console.error("TTS Error:", error);
     // 专门处理 404 错误
