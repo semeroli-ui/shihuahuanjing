@@ -252,10 +252,12 @@ export default function App() {
               throw new Error(`模型生成错误: ${result.error.message || JSON.stringify(result.error)}`);
             }
             
-            // 更加鲁棒的链接提取逻辑，尝试多种可能的路径
+            // 更加鲁棒的链接提取逻辑，尝试多种可能的路径（结合用户截图中的 generateVideoResponse.generatedSamples）
             const response = result.response;
             const downloadLink = response?.generatedVideos?.[0]?.video?.uri || 
+                                 response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
                                  response?.generatedVideos?.[0]?.uri ||
+                                 response?.generateVideoResponse?.generatedSamples?.[0]?.uri ||
                                  response?.video?.uri ||
                                  response?.uri ||
                                  (result as any).video?.uri;
