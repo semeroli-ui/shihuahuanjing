@@ -246,13 +246,22 @@ export default function App() {
           console.log('Poll result received:', result);
           
           if (result.done) {
+            console.log('视频生成任务已完成，完整响应数据:', result);
+            
             if (result.error) {
               throw new Error(`模型生成错误: ${result.error.message || JSON.stringify(result.error)}`);
             }
             
-            const downloadLink = result.response?.generatedVideos?.[0]?.video?.uri;
+            // 更加鲁棒的链接提取逻辑，尝试多种可能的路径
+            const response = result.response;
+            const downloadLink = response?.generatedVideos?.[0]?.video?.uri || 
+                                 response?.generatedVideos?.[0]?.uri ||
+                                 response?.video?.uri ||
+                                 response?.uri ||
+                                 (result as any).video?.uri;
+
             if (downloadLink) {
-              console.log('Video generation complete. Downloading from proxy...');
+              console.log('找到视频下载链接:', downloadLink);
               setVideoStatus('视频已生成，正在通过安全代理下载...');
               
               const response = await fetch(`/api/download-video?url=${encodeURIComponent(downloadLink)}`);
