@@ -218,15 +218,30 @@ app.post('/poll-video', async (c) => {
     const ai = new GoogleGenAI({ apiKey });
     
     // 确保传入的是正确的参数格式
-    // SDK getVideosOperation 期望的是 { operation: string | VideoGenerationOperation }
-    // 传递字符串最为稳妥，避免 SDK 尝试在普通对象上调用内部方法
     const opName = typeof operation === 'object' ? (operation.name || operation) : operation;
     
-    console.log("Polling operation name (string):", opName);
+    if (!opName || typeof opName !== 'string') {
+      return c.json({ error: "无效的 operation ID" }, 400);
+    }
+
+    console.log("Polling operation via direct fetch:", opName);
     
-    const result = await ai.operations.getVideosOperation({ 
-      operation: opName 
+    // 使用直接 fetch 方式轮询，避开 SDK 可能存在的参数解析问题
+    const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}`;
+    const response = await fetch(pollUrl, {
+      method: 'GET',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json'
+      }
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Google API 错误: ${response.status} ${JSON.stringify(errorData)}`);
+    }
+
+    const result = await response.json();
     return c.json(result);
   } catch (error: any) {
     console.error("Poll Video Error:", error);
@@ -291,7 +306,7 @@ app.post('/generate-speech', async (c) => {
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `请吟诵：${text}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO],
+        responseModalities: ['AUDIO'] as any,
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Fenrir' }
@@ -300,19 +315,24 @@ app.post('/generate-speech', async (c) => {
       }
     });
 
-    console.log("TTS Response Candidates:", response.candidates?.length);
+    console.log("TTS Response received");
+    
     const candidate = response.candidates?.[0];
-    const part = candidate?.content?.parts?.find(p => p.inlineData);
-    const base64Audio = part?.inlineData?.data;
+    // 遍历所有 parts 寻找音频数据
+    const audioPart = candidate?.content?.parts?.find(p => p.inlineData?.mimeType?.includes('audio') || p.inlineData?.data);
+    const base64Audio = audioPart?.inlineData?.data;
+    
     if (base64Audio) {
       return c.json({ base64Audio });
     }
     
-    // 如果没有音频数据，看看是不是有报错信息
-    const finishReason = response.candidates?.[0]?.finishReason;
-    console.error("TTS No Audio. Finish Reason:", finishReason);
-    
-    return c.json({ error: `模型未返回音频数据 (原因: ${finishReason || '未知'})` }, 500);
+    // 如果没有音频数据，记录完整响应以供调试
+    console.error("TTS No audio in response. Full response:", JSON.stringify(response));
+    const finishReason = candidate?.finishReason;
+    return c.json({ 
+      error: `模型未返回音频数据 (原因: ${finishReason || '未知'})`,
+      details: response 
+    }, 500);
   } catch (error: any) {
     console.error("TTS Error:", error);
     const errorDetail = error.response?.data || error.details || error.message || error;
