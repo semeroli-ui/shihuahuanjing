@@ -1,16 +1,12 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 type Bindings = {
-  // ModelScope API Key (诗词解析 + TTS + 图片兜底)
-  MODEL_SCOPE_API_KEY: string;
-  // Agnes AI API Key (图片生成优先)
+  // Agnes AI API Key (主力 - 全功能)
   AGNES_AI_API_KEY: string;
-  // Google API Keys (仅用于视频生成 Veo)
-  GEMINI_PRO_API_KEY?: string;
-  GOOGLE_AI_STUDIO_API_KEY?: string;
+  // ModelScope API Key (备用/兜底)
+  MODEL_SCOPE_API_KEY?: string;
   DB: D1Database;
 };
 
@@ -62,27 +58,29 @@ const checkQuota = async (c: any) => {
 };
 
 // ============================================================
-// ModelScope 调用工具
+// Agnes AI 调用工具
 // ============================================================
 
+const AGNES_AI_BASE = 'https://api.agnesai.com';
+
 /**
- * 调用 ModelScope 文本生成 API
+ * Agnes AI 文本对话 (用于诗词解析)
  */
-async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?: string): Promise<string> {
+async function callAgnesAIChat(apiKey: string, userPrompt: string, systemPrompt?: string): Promise<string> {
   const messages: Array<{ role: string; content: string }> = [];
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
   }
-  messages.push({ role: 'user', content: prompt });
+  messages.push({ role: 'user', content: userPrompt });
 
-  const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'Qwen/Qwen3-235B-A22B',
+      model: 'agnes-ai-v1',
       messages,
       temperature: 0.7,
       max_tokens: 2048,
@@ -91,7 +89,7 @@ async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?:
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`ModelScope API error ${response.status}: ${errorText}`);
+    throw new Error(`Agnes AI Chat error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json() as any;
@@ -99,64 +97,10 @@ async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?:
 }
 
 /**
- * 调用 ModelScope 图片生成 API
+ * Agnes AI 图片生成
  */
-async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
-  const response = await fetch('https://api-inference.modelscope.cn/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'AI-ModelScope/stable-diffusion-xl-base-1.0',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`ModelScope Image API error ${response.status}: ${errorText}`);
-  }
-
-  const data = await response.json() as any;
-  return data.images?.[0] || {};
-}
-
-/**
- * 调用 ModelScope TTS API
- */
-async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
-  const response = await fetch('https://api-inference.modelscope.cn/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'FunAudioLLM/CosyVoice2-0.5B',
-      input: text,
-      voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
-      response_format: 'mp3',
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`ModelScope TTS API error ${response.status}: ${errorText}`);
-  }
-
-  return await response.arrayBuffer();
-}
-
-// ============================================================
-// Agnes AI 调用工具
-// ============================================================
-
 async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
-  const response = await fetch('https://api.agnesai.com/v1/images/generations', {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -172,11 +116,102 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Agnes AI API error ${response.status}: ${errorText}`);
+    throw new Error(`Agnes AI Image error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json() as any;
   return data.data?.[0] || {};
+}
+
+/**
+ * Agnes AI 视频生成
+ */
+async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/videos/generations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'agnes-ai-video',
+      prompt,
+      n: 1,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Agnes AI Video error ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Agnes AI TTS 语音合成
+ */
+async function callAgnesAITTS(apiKey: string, text: string): Promise<ArrayBuffer> {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/audio/speech`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'agnes-ai-tts',
+      input: text,
+      voice: 'alloy',
+      response_format: 'mp3',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Agnes AI TTS error ${response.status}: ${errorText}`);
+  }
+
+  return await response.arrayBuffer();
+}
+
+// ============================================================
+// ModelScope 备用工具
+// ============================================================
+
+async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?: string): Promise<string> {
+  const messages: Array<{ role: string; content: string }> = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B', messages, temperature: 0.7, max_tokens: 2048 }),
+  });
+  if (!response.ok) throw new Error(`ModelScope Text error ${response.status}`);
+  const data = await response.json() as any;
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
+  const response = await fetch('https://api-inference.modelscope.cn/v1/images/generations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'AI-ModelScope/stable-diffusion-xl-base-1.0', prompt, n: 1, size: '1024x1024' }),
+  });
+  if (!response.ok) throw new Error(`ModelScope Image error ${response.status}`);
+  const data = await response.json() as any;
+  return data.images?.[0] || {};
+}
+
+async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
+  const response = await fetch('https://api-inference.modelscope.cn/v1/audio/speech', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' }),
+  });
+  if (!response.ok) throw new Error(`ModelScope TTS error ${response.status}`);
+  return await response.arrayBuffer();
 }
 
 // ============================================================
@@ -185,10 +220,8 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
 app.get('/health', async (c) => {
   const loggedIn = await isAdmin(c);
   return c.json({
-    hasModelScopeKey: !!c.env.MODEL_SCOPE_API_KEY,
     hasAgnesAIKey: !!c.env.AGNES_AI_API_KEY,
-    hasGeminiProKey: !!c.env.GEMINI_PRO_API_KEY,
-    hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY,
+    hasModelScopeKey: !!c.env.MODEL_SCOPE_API_KEY,
     hasDB: !!c.env.DB,
     isAdmin: loggedIn,
   });
@@ -202,11 +235,7 @@ app.post('/admin/login', async (c) => {
 
   if ((email === 'lablabe@qq.com' || email === 'AS2008FG@gmail.com') && password === 'admin123654') {
     setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
-      path: '/',
-      secure: true,
-      httpOnly: true,
-      maxAge: 60 * 60 * 24,
-      sameSite: 'Strict'
+      path: '/', secure: true, httpOnly: true, maxAge: 60 * 60 * 24, sameSite: 'Strict'
     });
     return c.json({ success: true });
   }
@@ -217,11 +246,7 @@ app.post('/admin/login', async (c) => {
 
   if (admin) {
     setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
-      path: '/',
-      secure: true,
-      httpOnly: true,
-      maxAge: 60 * 60 * 24,
-      sameSite: 'Strict'
+      path: '/', secure: true, httpOnly: true, maxAge: 60 * 60 * 24, sameSite: 'Strict'
     });
     return c.json({ success: true });
   }
@@ -234,14 +259,10 @@ app.post('/admin/login', async (c) => {
 // ============================================================
 app.post('/admin/change-password', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "未授权" }, 401);
-
   const { newPassword } = await c.req.json();
-  const email = 'lablabe@qq.com';
-
   await c.env.DB.prepare(
     "INSERT INTO admins (email, password) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET password = ?"
-  ).bind(email, newPassword, newPassword).run();
-
+  ).bind('lablabe@qq.com', newPassword, newPassword).run();
   return c.json({ success: true });
 });
 
@@ -254,16 +275,13 @@ app.post('/admin/logout', (c) => {
 });
 
 // ============================================================
-// 5. 诗词解析接口 (ModelScope)
+// 5. 诗词解析接口 (Agnes AI -> ModelScope)
 // ============================================================
 app.post('/generate-prompt', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
 
     const { poem } = await c.req.json();
-    const apiKey = c.env.MODEL_SCOPE_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 ModelScope API Key" }, 500);
-
     const systemInstruction = `你是一位集"中国古典诗词研究专家"、"美学视觉专家"与"奥斯卡金像奖导演"于一身的跨界大师。
 你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本。
 
@@ -271,23 +289,39 @@ app.post('/generate-prompt', async (c) => {
 - chinese: 对诗句意境的优美中文描述，融合文学性与视觉美感。
 - english: 专门为图片/视频生成模型设计的纯英文提示词。要求包含：镜头语言（如 Close-up, Slow-motion）、光影描述（如 Cinematic lighting, Golden hour）、艺术风格（如 Traditional Chinese ink wash style, Photorealistic）以及具体的画面细节。`;
 
-    const text = await callModelScopeText(apiKey, poem, systemInstruction);
+    let text = '';
+
+    // 策略1: Agnes AI
+    const agnesKey = c.env.AGNES_AI_API_KEY;
+    if (agnesKey) {
+      try {
+        text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
+        console.log('[Prompt Gen] Agnes AI success');
+      } catch (err: any) {
+        console.error('[Prompt Gen] Agnes AI failed:', err.message);
+      }
+    }
+
+    // 策略2: ModelScope 兜底
+    if (!text && c.env.MODEL_SCOPE_API_KEY) {
+      try {
+        text = await callModelScopeText(c.env.MODEL_SCOPE_API_KEY, poem, systemInstruction);
+        console.log('[Prompt Gen] ModelScope fallback success');
+      } catch (err: any) {
+        console.error('[Prompt Gen] ModelScope also failed:', err.message);
+      }
+    }
 
     if (!text) {
-      return c.json({ chinese: "解析失败：模型返回内容为空", english: "Analysis failed: empty response" });
+      return c.json({ chinese: "解析失败：所有 AI 服务均不可用", english: "All AI services unavailable" }, 500);
     }
 
     let rawData: any;
     try {
       rawData = JSON.parse(text);
     } catch {
-      // 如果返回的不是 JSON，尝试提取
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        rawData = JSON.parse(jsonMatch[0]);
-      } else {
-        return c.json({ chinese: text, english: text });
-      }
+      rawData = jsonMatch ? JSON.parse(jsonMatch[0]) : { chinese: text, english: text };
     }
 
     const processedData = {
@@ -301,86 +335,147 @@ app.post('/generate-prompt', async (c) => {
     return c.json(processedData);
   } catch (e: any) {
     console.error("Generate Prompt Error:", e);
-    return c.json({
-      chinese: `解析出错: ${e.message}`,
-      english: "Analysis error",
-      error: e.message
-    }, 500);
+    return c.json({ chinese: `解析出错: ${e.message}`, english: "Analysis error", error: e.message }, 500);
   }
 });
 
 // ============================================================
-// 6. 视频生成接口 (保留 Gemini Veo)
+// 6. 视频生成接口 (Agnes AI)
+// 兼容前端轮询模式：如果 Agnes AI 同步返回结果，直接包装成 done:true
 // ============================================================
 app.post('/generate-video', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
     const { prompt } = await c.req.json();
-    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 Google AI Studio API Key (视频生成需要)" }, 500);
+    const apiKey = c.env.AGNES_AI_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 Agnes AI API Key" }, 500);
 
-    const ai = new GoogleGenAI({ apiKey });
+    const result = await callAgnesAIVideo(apiKey, prompt);
+    console.log('[Video Gen] Agnes AI raw result:', JSON.stringify(result).slice(0, 500));
 
-    const operation = await ai.models.generateVideos({
-      model: 'veo-3.1-fast-generate-preview',
-      prompt: prompt,
-      config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
-    });
-    return c.json(operation);
+    // 检查是否同步返回了视频数据（URL 或 base64）
+    const videoUrl =
+      result?.data?.[0]?.url ||
+      result?.data?.[0]?.video_url ||
+      result?.video_url ||
+      result?.url ||
+      result?.output?.url ||
+      result?.output?.video_url ||
+      (typeof result === 'string' ? result : null);
+
+    const videoB64 =
+      result?.data?.[0]?.b64_json ||
+      result?.data?.[0]?.base64 ||
+      result?.base64;
+
+    if (videoUrl || videoB64) {
+      // 同步返回成功，包装成前端期望的格式
+      const wrappedResult = {
+        done: true,
+        response: {
+          generatedVideos: [{ video: { uri: videoUrl || undefined, b64_json: videoB64 || undefined } }]
+        },
+        _raw: result // 保留原始数据供调试
+      };
+      console.log('[Video Gen] Synchronous success, wrapping as done:true');
+      return c.json(wrappedResult);
+    }
+
+    // 如果返回了 task_id/operation name，按异步模式返回
+    if (result?.task_id || result?.id || result?.name || (typeof result === 'object' && !result.data)) {
+      console.log('[Video Gen] Async mode, returning operation:', JSON.stringify(result).slice(0, 200));
+      return c.json(result);
+    }
+
+    // 无法识别的格式，原样返回并记录
+    console.log('[Video Gen] Unknown format, returning raw:', JSON.stringify(result).slice(0, 300));
+    return c.json(result);
   } catch (error: any) {
     console.error("Generate Video Error:", error);
-    return c.json({ error: `视频生成请求失败: ${error.message || '未知错误'}`, details: error }, 500);
+    return c.json({ error: `视频生成请求失败: ${error.message || '未知错误'}`, details: error.message }, 500);
   }
 });
 
 // ============================================================
-// 7. 视频状态轮询接口 (保留 Gemini)
+// 7. 视频状态轮询接口 (Agnes AI / 通用)
 // ============================================================
 app.post('/poll-video', async (c) => {
   try {
     const { operation } = await c.req.json();
     if (!operation) return c.json({ error: "缺少 operation 参数" }, 400);
 
-    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 Google AI Studio API Key" }, 500);
+    const apiKey = c.env.AGNES_AI_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 Agnes AI API Key" }, 500);
 
-    const opName = typeof operation === 'object' ? (operation.name || operation) : operation;
-
-    if (!opName || typeof opName !== 'string') {
-      return c.json({ error: "无效的 operation ID" }, 400);
+    // 如果传入的 operation 已经是 done:true（同步返回的情况），直接返回
+    if (operation.done === true) {
+      console.log('[Poll Video] Operation already completed, returning as-is');
+      return c.json(operation);
     }
 
-    console.log("Polling operation via direct fetch:", opName);
+    // 尝试提取 task_id 进行异步查询
+    const taskId = typeof operation === 'string'
+      ? operation
+      : (operation?.task_id || operation?.id || operation?.name || null);
 
-    const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}`;
-    const response = await fetch(pollUrl, {
-      method: 'GET',
-      headers: {
-        'x-goog-api-key': apiKey,
-        'Content-Type': 'application/json'
+    if (taskId) {
+      console.log('[Poll Video] Polling task:', taskId);
+      try {
+        const pollUrl = `${AGNES_AI_BASE}/v1/videos/${encodeURIComponent(taskId)}`;
+        const response = await fetch(pollUrl, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('[Poll Video] Result:', JSON.stringify(result).slice(0, 300));
+
+          // 检查是否完成
+          const videoUrl = result?.data?.[0]?.url || result?.video_url || result?.url;
+          if (videoUrl || result.status === 'completed' || result.done === true) {
+            return c.json({
+              done: true,
+              response: {
+                generatedVideos: [{ video: { uri: videoUrl } }]
+              }
+            });
+          }
+          // 还在进行中
+          return c.json({ done: false, ...result });
+        } else {
+          // 查询端点可能不存在，返回原始 operation
+          console.warn('[Poll Video] Poll endpoint not available:', response.status);
+        }
+      } catch (pollErr: any) {
+        console.error('[Poll Video] Poll failed:', pollErr.message);
       }
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Google API 错误: ${response.status} ${JSON.stringify(errorData)}`);
     }
 
-    const result = await response.json();
-    return c.json(result);
+    // 无法轮询，直接标记完成并尝试从原始数据中提取 URL
+    console.log('[Poll Video] Cannot poll, checking raw operation for URL');
+    const fallbackUrl =
+      (operation as any)?.response?.generatedVideos?.[0]?.video?.uri ||
+      (operation as any)?.video_url ||
+      (operation as any)?.url;
+
+    if (fallbackUrl) {
+      return c.json({
+        done: true,
+        response: { generatedVideos: [{ video: { uri: fallbackUrl } }] }
+      });
+    }
+
+    return c.json({ error: "无法获取视频状态" }, 400);
   } catch (error: any) {
     console.error("Poll Video Error:", error);
-    const errorDetail = error.response?.data || error.details || error.message || error;
-    return c.json({
-      error: `状态查询失败: ${error.message || '未知错误'}`,
-      details: errorDetail
-    }, 500);
+    return c.json({ error: `状态查询失败: ${error.message || '未知错误'}`, details: error.message }, 500);
   }
 });
 
 // ============================================================
-// 8. 图像生成接口 (Agnes AI 优先 -> ModelScope 兜底)
+// 8. 图像生成接口 (Agnes AI -> ModelScope)
 // ============================================================
 app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
@@ -388,7 +483,7 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const enhancedPrompt = `A cinematic masterpiece of Chinese traditional painting style. ${prompt}. Ultra-high definition, 4k quality, photorealistic, intricate details, elegant composition, traditional Chinese aesthetic.`;
 
-  // 策略1: 尝试 Agnes AI
+  // 策略1: Agnes AI
   const agnesKey = c.env.AGNES_AI_API_KEY;
   if (agnesKey) {
     try {
@@ -397,16 +492,17 @@ app.post('/generate-image', async (c) => {
       if (result.b64_json || result.url) {
         console.log('[Image Gen] Agnes AI success');
         return c.json({
-          generatedImages: result.b64_json ? [{ image: { imageBytes: result.b64_json } }] : [{ image: { url: result.url } }]
+          generatedImages: result.b64_json
+            ? [{ image: { imageBytes: result.b64_json } }]
+            : [{ image: { url: result.url } }]
         });
       }
     } catch (err: any) {
       console.error('[Image Gen] Agnes AI failed:', err.message);
-      // 继续尝试 ModelScope
     }
   }
 
-  // 策略2: 兜底到 ModelScope
+  // 策略2: ModelScope 兜底
   const msKey = c.env.MODEL_SCOPE_API_KEY;
   if (msKey) {
     try {
@@ -415,7 +511,9 @@ app.post('/generate-image', async (c) => {
       if (result.b64_json || result.url) {
         console.log('[Image Gen] ModelScope success');
         return c.json({
-          generatedImages: result.b64_json ? [{ image: { imageBytes: result.b64_json } }] : [{ image: { url: result.url } }]
+          generatedImages: result.b64_json
+            ? [{ image: { imageBytes: result.b64_json } }]
+            : [{ image: { url: result.url } }]
         });
       }
     } catch (err: any) {
@@ -423,132 +521,83 @@ app.post('/generate-image', async (c) => {
     }
   }
 
-  // 策略3: 最后兜底到 Gemini Image (如果还有 key)
-  const geminiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-  if (geminiKey) {
-    try {
-      console.log('[Image Gen] Fallback to Gemini Image...');
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
-        contents: [{
-          parts: [{ text: enhancedPrompt }]
-        }],
-        config: {
-          imageConfig: {
-            aspectRatio: "16:9",
-            imageSize: "4K"
-          }
-        },
-      });
-
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          return c.json({
-            generatedImages: [{
-              image: { imageBytes: part.inlineData.data }
-            }]
-          });
-        }
-      }
-    } catch (err: any) {
-      console.error('[Image Gen] Gemini also failed:', err.message);
-    }
-  }
-
   return c.json({ error: "所有图片生成服务均不可用" }, 500);
 });
 
 // ============================================================
-// 9. 诗词吟诵接口 (ModelScope TTS)
+// 9. 诗词吟诵接口 (Agnes AI TTS -> ModelScope TTS)
 // ============================================================
 app.post('/generate-speech', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
     const { text } = await c.req.json();
-    const apiKey = c.env.MODEL_SCOPE_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 ModelScope API Key (TTS 需要)" }, 500);
-
     const ttsText = `请吟诵这首古诗：${text}`;
-    const audioBuffer = await callModelScopeTTS(apiKey, ttsText);
 
-    // 将 ArrayBuffer 转 base64
-    const bytes = new Uint8Array(audioBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64Audio = btoa(binary);
-
-    return c.json({ base64Audio });
-  } catch (error: any) {
-    console.error("TTS Error:", error);
-
-    // 如果 ModelScope TTS 失败，尝试 Gemini TTS 兜底
-    const geminiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (geminiKey) {
+    // 策略1: Agnes AI TTS
+    const agnesKey = c.env.AGNES_AI_API_KEY;
+    if (agnesKey) {
       try {
-        console.log('[TTS] Fallback to Gemini TTS...');
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: `请吟诵：${text}` }] }],
-          config: {
-            responseModalities: ['AUDIO'] as any,
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Fenrir' }
-              }
-            }
-          }
-        });
-
-        const candidate = response.candidates?.[0];
-        const audioPart = candidate?.content?.parts?.find(p =>
-          p.inlineData?.mimeType?.includes('audio') || p.inlineData?.data
-        );
-        const base64Fallback = audioPart?.inlineData?.data;
-
-        if (base64Fallback) {
-          return c.json({ base64Audio: base64Fallback });
-        }
-      } catch (fallbackErr: any) {
-        console.error('[TTS] Gemini fallback also failed:', fallbackErr.message);
+        console.log('[TTS] Trying Agnes AI...');
+        const audioBuffer = await callAgnesAITTS(agnesKey, ttsText);
+        const bytes = new Uint8Array(audioBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64Audio = btoa(binary);
+        console.log('[TTS] Agnes AI success');
+        return c.json({ base64Audio });
+      } catch (err: any) {
+        console.error('[TTS] Agnes AI failed:', err.message);
       }
     }
 
-    return c.json({
-      error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`,
-      details: error.message
-    }, 500);
+    // 策略2: ModelScope TTS 兜底
+    const msKey = c.env.MODEL_SCOPE_API_KEY;
+    if (msKey) {
+      try {
+        console.log('[TTS] Fallback to ModelScope...');
+        const audioBuffer = await callModelScopeTTS(msKey, ttsText);
+        const bytes = new Uint8Array(audioBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64Audio = btoa(binary);
+        console.log('[TTS] ModelScope success');
+        return c.json({ base64Audio });
+      } catch (err: any) {
+        console.error('[TTS] ModelScope also failed:', err.message);
+      }
+    }
+
+    return c.json({ error: "所有语音合成服务均不可用" }, 500);
+  } catch (error: any) {
+    console.error("TTS Error:", error);
+    return c.json({ error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, details: error.message }, 500);
   }
 });
 
 // ============================================================
-// 10. 视频下载代理接口 (保留 Gemini)
+// 10. 视频下载代理接口 (通用下载)
 // ============================================================
 app.get('/download-video', async (c) => {
   const url = c.req.query('url');
   if (!url) return c.json({ error: "缺少 URL 参数" }, 400);
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'x-goog-api-key': c.env.GOOGLE_AI_STUDIO_API_KEY,
-    },
-  });
+  try {
+    const response = await fetch(url, { method: 'GET' });
 
-  if (!response.ok) {
-    return c.json({ error: "视频下载失败" }, response.status as any);
+    if (!response.ok) {
+      return c.json({ error: "视频下载失败" }, response.status as any);
+    }
+
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': response.headers.get('Content-Type') || 'video/mp4',
+        'Content-Disposition': `attachment; filename="video_${Date.now()}.mp4"`,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: `视频下载失败: ${error.message}` }, 500);
   }
-
-  return new Response(response.body, {
-    headers: {
-      'Content-Type': response.headers.get('Content-Type') || 'video/mp4',
-      'Content-Disposition': `attachment; filename="video_${Date.now()}.mp4"`,
-    },
-  });
 });
 
 // ============================================================
@@ -563,7 +612,6 @@ app.get('/library', async (c) => {
 
 app.post('/library', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "仅管理员可录入藏书" }, 401);
-
   const { poem } = await c.req.json();
   const id = Date.now().toString();
   await c.env.DB.prepare(
@@ -574,7 +622,6 @@ app.post('/library', async (c) => {
 
 app.delete('/library/:id', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "仅管理员可移除藏书" }, 401);
-
   const id = c.req.param('id');
   await c.env.DB.prepare("DELETE FROM library WHERE id = ?").bind(id).run();
   return c.json({ success: true });

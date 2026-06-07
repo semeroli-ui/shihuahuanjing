@@ -8,10 +8,8 @@ destination_dir = "dist"
 
 [vars]
 # 环境变量名（请在 Cloudflare 控制台设置对应的值）
-# MODEL_SCOPE_API_KEY = "..."        # ModelScope API Key (诗词解析 + TTS + 图片兜底)
-# AGNES_AI_API_KEY = "..."           # Agnes AI API Key (图片生成优先)
-# GEMINI_PRO_API_KEY = "..."         # (可选) Gemini Pro Key (视频生成)
-# GOOGLE_AI_STUDIO_API_KEY = "..."   # (可选) Google Studio Key (视频生成 Veo)
+# AGNES_AI_API_KEY = "..."          # Agnes AI API Key (必需 - 全功能主力)
+# MODEL_SCOPE_API_KEY = "..."        # ModelScope API Key (可选 - 备用兜底)
 APP_ENV = "production"
 
 [[d1_databases]]
