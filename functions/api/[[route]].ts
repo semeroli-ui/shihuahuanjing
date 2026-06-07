@@ -4,8 +4,13 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 type Bindings = {
-  GEMINI_PRO_API_KEY: string;
-  GOOGLE_AI_STUDIO_API_KEY: string;
+  // ModelScope API Key (诗词解析 + TTS + 图片兜底)
+  MODEL_SCOPE_API_KEY: string;
+  // Agnes AI API Key (图片生成优先)
+  AGNES_AI_API_KEY: string;
+  // Google API Keys (仅用于视频生成 Veo)
+  GEMINI_PRO_API_KEY?: string;
+  GOOGLE_AI_STUDIO_API_KEY?: string;
   DB: D1Database;
 };
 
@@ -19,24 +24,20 @@ app.use('*', async (c, next) => {
 
 // --- 辅助函数 ---
 
-// 获取 API Key (支持逗号分隔的多个 Key 轮询)
 const getApiKey = (keyString: string | undefined) => {
   if (!keyString) return null;
   const keys = keyString.split(',').map(k => k.trim()).filter(k => k.length > 0);
   if (keys.length === 0) return null;
-  // 随机选择一个 Key 以分散负载
   return keys[Math.floor(Math.random() * keys.length)];
 };
 
-// 检查是否是管理员
 const isAdmin = async (c: any) => {
   const token = getCookie(c, 'admin_token');
-  return token === 'ZEN_ADMIN_LOGGED_IN'; // 简单实现，实际生产建议使用更安全的 JWT
+  return token === 'ZEN_ADMIN_LOGGED_IN';
 };
 
-// 检查并更新配额 (每个 IP 每天 3 次)
 const checkQuota = async (c: any) => {
-  if (await isAdmin(c)) return true; // 管理员不受限制
+  if (await isAdmin(c)) return true;
 
   const ip = c.req.header('cf-connecting-ip') || 'unknown';
   const today = new Date().toISOString().split('T')[0];
@@ -60,36 +61,156 @@ const checkQuota = async (c: any) => {
   return true;
 };
 
+// ============================================================
+// ModelScope 调用工具
+// ============================================================
+
+/**
+ * 调用 ModelScope 文本生成 API
+ */
+async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?: string): Promise<string> {
+  const messages: Array<{ role: string; content: string }> = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'Qwen/Qwen3-235B-A22B',
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ModelScope API error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json() as any;
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * 调用 ModelScope 图片生成 API
+ */
+async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
+  const response = await fetch('https://api-inference.modelscope.cn/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'AI-ModelScope/stable-diffusion-xl-base-1.0',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ModelScope Image API error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json() as any;
+  return data.images?.[0] || {};
+}
+
+/**
+ * 调用 ModelScope TTS API
+ */
+async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
+  const response = await fetch('https://api-inference.modelscope.cn/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'FunAudioLLM/CosyVoice2-0.5B',
+      input: text,
+      voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
+      response_format: 'mp3',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ModelScope TTS API error ${response.status}: ${errorText}`);
+  }
+
+  return await response.arrayBuffer();
+}
+
+// ============================================================
+// Agnes AI 调用工具
+// ============================================================
+
+async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
+  const response = await fetch('https://api.agnesai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'agnes-ai-v1',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Agnes AI API error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json() as any;
+  return data.data?.[0] || {};
+}
+
+// ============================================================
 // 1. 健康检查与状态
+// ============================================================
 app.get('/health', async (c) => {
   const loggedIn = await isAdmin(c);
-  const proKeys = c.env.GEMINI_PRO_API_KEY ? c.env.GEMINI_PRO_API_KEY.split(',').filter(k => k.trim().length > 0).length : 0;
-  return c.json({ 
-    hasProKey: proKeys > 0, // 用于诗词解析 (免费层)
-    proKeyCount: proKeys,
-    hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY, // 用于 Veo/Imagen/TTS (高权限)
+  return c.json({
+    hasModelScopeKey: !!c.env.MODEL_SCOPE_API_KEY,
+    hasAgnesAIKey: !!c.env.AGNES_AI_API_KEY,
+    hasGeminiProKey: !!c.env.GEMINI_PRO_API_KEY,
+    hasStudioKey: !!c.env.GOOGLE_AI_STUDIO_API_KEY,
     hasDB: !!c.env.DB,
-    isAdmin: loggedIn
+    isAdmin: loggedIn,
   });
 });
 
+// ============================================================
 // 2. 管理员登录
+// ============================================================
 app.post('/admin/login', async (c) => {
   const { email, password } = await c.req.json();
-  
-  // 初始账号检查 (增加当前用户邮箱)
+
   if ((email === 'lablabe@qq.com' || email === 'AS2008FG@gmail.com') && password === 'admin123654') {
     setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
       path: '/',
       secure: true,
       httpOnly: true,
-      maxAge: 60 * 60 * 24, // 1天
+      maxAge: 60 * 60 * 24,
       sameSite: 'Strict'
     });
     return c.json({ success: true });
   }
 
-  // 数据库检查 (支持修改后的密码)
   const admin = await c.env.DB.prepare(
     "SELECT * FROM admins WHERE email = ? AND password = ?"
   ).bind(email, password).first();
@@ -108,14 +229,15 @@ app.post('/admin/login', async (c) => {
   return c.json({ success: false, error: "邮箱或密码错误" }, 401);
 });
 
-// 3. 修改密码 (需要登录)
+// ============================================================
+// 3. 修改密码
+// ============================================================
 app.post('/admin/change-password', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "未授权" }, 401);
-  
+
   const { newPassword } = await c.req.json();
   const email = 'lablabe@qq.com';
 
-  // 更新或插入新密码
   await c.env.DB.prepare(
     "INSERT INTO admins (email, password) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET password = ?"
   ).bind(email, newPassword, newPassword).run();
@@ -123,77 +245,83 @@ app.post('/admin/change-password', async (c) => {
   return c.json({ success: true });
 });
 
+// ============================================================
 // 4. 退出登录
+// ============================================================
 app.post('/admin/logout', (c) => {
   deleteCookie(c, 'admin_token');
   return c.json({ success: true });
 });
 
-// 5. 诗词解析接口 (受配额限制)
+// ============================================================
+// 5. 诗词解析接口 (ModelScope)
+// ============================================================
 app.post('/generate-prompt', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
-    
-    const { poem } = await c.req.json();
-    // 优先从 GEMINI_PRO_API_KEY 中获取一个 Key (支持多 Key 轮询)
-    const apiKey = getApiKey(c.env.GEMINI_PRO_API_KEY) || c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 API Key (需要 GEMINI_PRO_API_KEY)" }, 500);
 
-    const ai = new GoogleGenAI({ apiKey });
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [{ parts: [{ text: poem }] }],
-      config: {
-        systemInstruction: `你是一位集“中国古典诗词研究专家”、“美学视觉专家”与“奥斯卡金像奖导演”于一身的跨界大师。
+    const { poem } = await c.req.json();
+    const apiKey = c.env.MODEL_SCOPE_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 ModelScope API Key" }, 500);
+
+    const systemInstruction = `你是一位集"中国古典诗词研究专家"、"美学视觉专家"与"奥斯卡金像奖导演"于一身的跨界大师。
 你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本。
 
 输出必须为严格的 JSON 格式：{"chinese": "...", "english": "..."}
 - chinese: 对诗句意境的优美中文描述，融合文学性与视觉美感。
-- english: 专门为 Veo 视频生成模型设计的纯英文提示词。要求包含：镜头语言（如 Close-up, Slow-motion）、光影描述（如 Cinematic lighting, Golden hour）、艺术风格（如 Traditional Chinese ink wash style, Photorealistic）以及具体的画面细节。`,
-        responseMimeType: "application/json",
-      },
-    });
+- english: 专门为图片/视频生成模型设计的纯英文提示词。要求包含：镜头语言（如 Close-up, Slow-motion）、光影描述（如 Cinematic lighting, Golden hour）、艺术风格（如 Traditional Chinese ink wash style, Photorealistic）以及具体的画面细节。`;
 
-    const text = response.text;
+    const text = await callModelScopeText(apiKey, poem, systemInstruction);
+
     if (!text) {
-      console.error("Empty response from Gemini Pro");
       return c.json({ chinese: "解析失败：模型返回内容为空", english: "Analysis failed: empty response" });
     }
 
-    const rawData = JSON.parse(text);
-    // 鲁棒性处理：如果 AI 返回了复杂对象而非字符串，将其转化为字符串
+    let rawData: any;
+    try {
+      rawData = JSON.parse(text);
+    } catch {
+      // 如果返回的不是 JSON，尝试提取
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        rawData = JSON.parse(jsonMatch[0]);
+      } else {
+        return c.json({ chinese: text, english: text });
+      }
+    }
+
     const processedData = {
       chinese: typeof rawData.chinese === 'object' ? JSON.stringify(rawData.chinese) : (rawData.chinese || ""),
       english: typeof rawData.english === 'object' ? JSON.stringify(rawData.english) : (rawData.english || "")
     };
-    
-    // 如果解析出来的字段还是空的，给个默认提示
+
     if (!processedData.chinese) processedData.chinese = "未能解析出意境描述";
     if (!processedData.english) processedData.english = "Failed to generate visual prompt";
 
     return c.json(processedData);
   } catch (e: any) {
     console.error("Generate Prompt Error:", e);
-    return c.json({ 
-      chinese: `解析出错: ${e.message}`, 
+    return c.json({
+      chinese: `解析出错: ${e.message}`,
       english: "Analysis error",
-      error: e.message 
+      error: e.message
     }, 500);
   }
 });
 
-// 6. 视频生成接口 (受配额限制)
+// ============================================================
+// 6. 视频生成接口 (保留 Gemini Veo)
+// ============================================================
 app.post('/generate-video', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
-    
+
     const { prompt } = await c.req.json();
     const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置高权限 API Key (GOOGLE_AI_STUDIO_API_KEY)" }, 500);
+    if (!apiKey) return c.json({ error: "未配置 Google AI Studio API Key (视频生成需要)" }, 500);
 
     const ai = new GoogleGenAI({ apiKey });
-    
+
     const operation = await ai.models.generateVideos({
       model: 'veo-3.1-fast-generate-preview',
       prompt: prompt,
@@ -206,27 +334,25 @@ app.post('/generate-video', async (c) => {
   }
 });
 
-// 7. 视频状态轮询接口
+// ============================================================
+// 7. 视频状态轮询接口 (保留 Gemini)
+// ============================================================
 app.post('/poll-video', async (c) => {
   try {
     const { operation } = await c.req.json();
     if (!operation) return c.json({ error: "缺少 operation 参数" }, 400);
-    
-    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置高权限 API Key (GOOGLE_AI_STUDIO_API_KEY)" }, 500);
 
-    const ai = new GoogleGenAI({ apiKey });
-    
-    // 确保传入的是正确的参数格式
+    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 Google AI Studio API Key" }, 500);
+
     const opName = typeof operation === 'object' ? (operation.name || operation) : operation;
-    
+
     if (!opName || typeof opName !== 'string') {
       return c.json({ error: "无效的 operation ID" }, 400);
     }
 
     console.log("Polling operation via direct fetch:", opName);
-    
-    // 使用直接 fetch 方式轮询，避开 SDK 可能存在的参数解析问题
+
     const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opName}`;
     const response = await fetch(pollUrl, {
       method: 'GET',
@@ -246,118 +372,162 @@ app.post('/poll-video', async (c) => {
   } catch (error: any) {
     console.error("Poll Video Error:", error);
     const errorDetail = error.response?.data || error.details || error.message || error;
-    return c.json({ 
-      error: `状态查询失败: ${error.message || '未知错误'}`, 
-      details: errorDetail 
+    return c.json({
+      error: `状态查询失败: ${error.message || '未知错误'}`,
+      details: errorDetail
     }, 500);
   }
 });
 
-// 8. 图像生成接口
+// ============================================================
+// 8. 图像生成接口 (Agnes AI 优先 -> ModelScope 兜底)
+// ============================================================
 app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
-  
-  const { prompt } = await c.req.json();
-  const ai = new GoogleGenAI({ apiKey: c.env.GOOGLE_AI_STUDIO_API_KEY });
-  
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-image-preview',
-      contents: [{ 
-        parts: [{ text: `A cinematic masterpiece of Chinese traditional painting. ${prompt}. Ultra-high definition, 4k, photorealistic, intricate details, elegant composition.` }] 
-      }],
-      config: {
-        imageConfig: {
-          aspectRatio: "16:9",
-          imageSize: "4K"
-        }
-      },
-    });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
+  const { prompt } = await c.req.json();
+  const enhancedPrompt = `A cinematic masterpiece of Chinese traditional painting style. ${prompt}. Ultra-high definition, 4k quality, photorealistic, intricate details, elegant composition, traditional Chinese aesthetic.`;
+
+  // 策略1: 尝试 Agnes AI
+  const agnesKey = c.env.AGNES_AI_API_KEY;
+  if (agnesKey) {
+    try {
+      console.log('[Image Gen] Trying Agnes AI...');
+      const result = await callAgnesAIImage(agnesKey, enhancedPrompt);
+      if (result.b64_json || result.url) {
+        console.log('[Image Gen] Agnes AI success');
         return c.json({
-          generatedImages: [{
-            image: { imageBytes: part.inlineData.data }
-          }]
+          generatedImages: result.b64_json ? [{ image: { imageBytes: result.b64_json } }] : [{ image: { url: result.url } }]
         });
       }
+    } catch (err: any) {
+      console.error('[Image Gen] Agnes AI failed:', err.message);
+      // 继续尝试 ModelScope
     }
-    return c.json({ error: "模型未返回图像数据" }, 500);
-  } catch (error: any) {
-    console.error("Image Gen Error:", error);
-    return c.json({ error: `图像生成失败: ${error.message || '未知错误'}`, details: error }, 500);
   }
+
+  // 策略2: 兜底到 ModelScope
+  const msKey = c.env.MODEL_SCOPE_API_KEY;
+  if (msKey) {
+    try {
+      console.log('[Image Gen] Fallback to ModelScope...');
+      const result = await callModelScopeImage(msKey, enhancedPrompt);
+      if (result.b64_json || result.url) {
+        console.log('[Image Gen] ModelScope success');
+        return c.json({
+          generatedImages: result.b64_json ? [{ image: { imageBytes: result.b64_json } }] : [{ image: { url: result.url } }]
+        });
+      }
+    } catch (err: any) {
+      console.error('[Image Gen] ModelScope also failed:', err.message);
+    }
+  }
+
+  // 策略3: 最后兜底到 Gemini Image (如果还有 key)
+  const geminiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+  if (geminiKey) {
+    try {
+      console.log('[Image Gen] Fallback to Gemini Image...');
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-image-preview',
+        contents: [{
+          parts: [{ text: enhancedPrompt }]
+        }],
+        config: {
+          imageConfig: {
+            aspectRatio: "16:9",
+            imageSize: "4K"
+          }
+        },
+      });
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return c.json({
+            generatedImages: [{
+              image: { imageBytes: part.inlineData.data }
+            }]
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('[Image Gen] Gemini also failed:', err.message);
+    }
+  }
+
+  return c.json({ error: "所有图片生成服务均不可用" }, 500);
 });
 
-// 9. 诗词吟诵接口 (TTS)
+// ============================================================
+// 9. 诗词吟诵接口 (ModelScope TTS)
+// ============================================================
 app.post('/generate-speech', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
-    
+
     const { text } = await c.req.json();
-    // 必须使用高权限的 STUDIO KEY，免费层通常不支持 TTS
-    const apiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置高权限 API Key (需要 GOOGLE_AI_STUDIO_API_KEY 以支持 TTS)" }, 500);
+    const apiKey = c.env.MODEL_SCOPE_API_KEY;
+    if (!apiKey) return c.json({ error: "未配置 ModelScope API Key (TTS 需要)" }, 500);
 
-    const ai = new GoogleGenAI({ apiKey });
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `请吟诵：${text}` }] }],
-      config: {
-        responseModalities: ['AUDIO'] as any,
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Fenrir' }
-          }
-        }
-      }
-    });
+    const ttsText = `请吟诵这首古诗：${text}`;
+    const audioBuffer = await callModelScopeTTS(apiKey, ttsText);
 
-    console.log("TTS Response received");
-    
-    const candidate = response.candidates?.[0];
-    // 遍历所有 parts 寻找音频数据
-    const audioPart = candidate?.content?.parts?.find(p => p.inlineData?.mimeType?.includes('audio') || p.inlineData?.data);
-    const base64Audio = audioPart?.inlineData?.data;
-    
-    if (base64Audio) {
-      return c.json({ base64Audio });
+    // 将 ArrayBuffer 转 base64
+    const bytes = new Uint8Array(audioBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
     }
-    
-    // 如果没有音频数据，记录完整响应以供调试
-    console.error("TTS No audio in response. Full response:", JSON.stringify(response));
-    const finishReason = candidate?.finishReason;
-    return c.json({ 
-      error: `模型未返回音频数据 (原因: ${finishReason || '未知'})`,
-      details: response 
-    }, 500);
+    const base64Audio = btoa(binary);
+
+    return c.json({ base64Audio });
   } catch (error: any) {
     console.error("TTS Error:", error);
-    const errorDetail = error.response?.data || error.details || error.message || error;
-    
-    // 专门处理 404 错误 (模型不可用)
-    if (error.message?.includes('404') || error.status === 404 || error.message?.toLowerCase().includes('not found')) {
-      return c.json({ 
-        error: "语音模型 (TTS) 暂不可用", 
-        details: "您的 API Key 暂无 gemini-2.5-flash-preview-tts 模型的访问权限，或者该模型在当前区域不可用。请在 Google AI Studio 检查模型可用性。" 
-      }, 404);
+
+    // 如果 ModelScope TTS 失败，尝试 Gemini TTS 兜底
+    const geminiKey = c.env.GOOGLE_AI_STUDIO_API_KEY;
+    if (geminiKey) {
+      try {
+        console.log('[TTS] Fallback to Gemini TTS...');
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-preview-tts",
+          contents: [{ parts: [{ text: `请吟诵：${text}` }] }],
+          config: {
+            responseModalities: ['AUDIO'] as any,
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Fenrir' }
+              }
+            }
+          }
+        });
+
+        const candidate = response.candidates?.[0];
+        const audioPart = candidate?.content?.parts?.find(p =>
+          p.inlineData?.mimeType?.includes('audio') || p.inlineData?.data
+        );
+        const base64Fallback = audioPart?.inlineData?.data;
+
+        if (base64Fallback) {
+          return c.json({ base64Audio: base64Fallback });
+        }
+      } catch (fallbackErr: any) {
+        console.error('[TTS] Gemini fallback also failed:', fallbackErr.message);
+      }
     }
-    
-    // 如果是权限错误
-    if (error.message?.includes('permission') || error.message?.includes('API key') || error.status === 403) {
-      return c.json({ error: "API Key 权限不足，无法使用 TTS 功能", details: errorDetail }, 403);
-    }
-    
-    return c.json({ 
-      error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, 
-      details: errorDetail 
+
+    return c.json({
+      error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`,
+      details: error.message
     }, 500);
   }
 });
 
-// 10. 视频下载代理接口
+// ============================================================
+// 10. 视频下载代理接口 (保留 Gemini)
+// ============================================================
 app.get('/download-video', async (c) => {
   const url = c.req.query('url');
   if (!url) return c.json({ error: "缺少 URL 参数" }, 400);
@@ -373,7 +543,6 @@ app.get('/download-video', async (c) => {
     return c.json({ error: "视频下载失败" }, response.status as any);
   }
 
-  // 将视频流转发给客户端
   return new Response(response.body, {
     headers: {
       'Content-Type': response.headers.get('Content-Type') || 'video/mp4',
@@ -382,7 +551,9 @@ app.get('/download-video', async (c) => {
   });
 });
 
-// 11. 藏书阁接口 (使用 D1 数据库)
+// ============================================================
+// 11. 藏书阁接口 (D1 数据库，不变)
+// ============================================================
 app.get('/library', async (c) => {
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM library ORDER BY created_at DESC"
@@ -392,7 +563,7 @@ app.get('/library', async (c) => {
 
 app.post('/library', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "仅管理员可录入藏书" }, 401);
-  
+
   const { poem } = await c.req.json();
   const id = Date.now().toString();
   await c.env.DB.prepare(
@@ -403,7 +574,7 @@ app.post('/library', async (c) => {
 
 app.delete('/library/:id', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "仅管理员可移除藏书" }, 401);
-  
+
   const id = c.req.param('id');
   await c.env.DB.prepare("DELETE FROM library WHERE id = ?").bind(id).run();
   return c.json({ success: true });
