@@ -356,6 +356,7 @@ app.post('/generate-prompt', async (c) => {
     }
 
     // 策略2: Agnes AI 兜底
+    const agnesKey = c.env.AGNES_AI_API_KEY;
     if (!text && agnesKey) {
       try {
         text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
@@ -601,8 +602,6 @@ app.post('/generate-speech', async (c) => {
     }
 
     // 策略2: Agnes AI TTS 兜底
-    const agnesKey = c.env.AGNES_AI_API_KEY;
-    if (agnesKey) {
     const agnesKey = c.env.AGNES_AI_API_KEY;
     if (agnesKey) {
       try {
