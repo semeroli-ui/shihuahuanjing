@@ -398,6 +398,7 @@ app.post('/generate-prompt', async (c) => {
 // ============================================================
 // 6. 视频生成接口 (Agnes AI)
 // 兼容前端轮询模式：如果 Agnes AI 同步返回结果，直接包装成 done:true
+// 注意：Agnes AI 当前有 SSL 证书问题 (525 错误)，视频生成暂时不可用
 // ============================================================
 app.post('/generate-video', async (c) => {
   try {
@@ -405,9 +406,27 @@ app.post('/generate-video', async (c) => {
 
     const { prompt } = await c.req.json();
     const apiKey = c.env.AGNES_AI_API_KEY;
-    if (!apiKey) return c.json({ error: "未配置 Agnes AI API Key" }, 500);
+    if (!apiKey) {
+      return c.json({ 
+        error: "视频生成服务暂时不可用", 
+        details: "未配置 Agnes AI API Key",
+        workaround: "视频生成需要 Agnes AI，但当前 SSL 证书有问题。建议联系 Agnes AI 技术支持或稍后重试。"
+      }, 503);
+    }
 
-    const result = await callAgnesAIVideo(apiKey, prompt);
+    let result;
+    try {
+      result = await callAgnesAIVideo(apiKey, prompt);
+    } catch (err: any) {
+      if (err.message?.includes('525')) {
+        return c.json({ 
+          error: "视频生成服务暂时不可用", 
+          details: "Agnes AI 服务端 SSL 证书配置有问题 (error 525)",
+          workaround: "请联系 Agnes AI 技术支持修复 SSL 证书，或稍后重试。"
+        }, 503);
+      }
+      throw err;
+    }
     console.log('[Video Gen] Agnes AI raw result:', JSON.stringify(result).slice(0, 500));
 
     // 检查是否同步返回了视频数据（URL 或 base64）
