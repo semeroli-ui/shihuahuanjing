@@ -35,26 +35,35 @@ const isAdmin = async (c: any) => {
 const checkQuota = async (c: any) => {
   if (await isAdmin(c)) return true;
 
-  const ip = c.req.header('cf-connecting-ip') || 'unknown';
-  const today = new Date().toISOString().split('T')[0];
+  // DB 不可用时跳过配额检查（降级模式）
+  if (!c.env.DB) return true;
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT count FROM usage_stats WHERE ip = ? AND date = ?"
-  ).bind(ip, today).all();
+  try {
+    const ip = c.req.header('cf-connecting-ip') || 'unknown';
+    const today = new Date().toISOString().split('T')[0];
 
-  const currentCount = results[0]?.count || 0;
-  if (currentCount >= 3) return false;
+    const { results } = await c.env.DB.prepare(
+      "SELECT count FROM usage_stats WHERE ip = ? AND date = ?"
+    ).bind(ip, today).all();
 
-  if (currentCount === 0) {
-    await c.env.DB.prepare(
-      "INSERT INTO usage_stats (ip, date, count) VALUES (?, ?, 1)"
-    ).bind(ip, today).run();
-  } else {
-    await c.env.DB.prepare(
-      "UPDATE usage_stats SET count = count + 1 WHERE ip = ? AND date = ?"
-    ).bind(ip, today).run();
+    const currentCount = results[0]?.count || 0;
+    if (currentCount >= 3) return false;
+
+    if (currentCount === 0) {
+      await c.env.DB.prepare(
+        "INSERT INTO usage_stats (ip, date, count) VALUES (?, ?, 1)"
+      ).bind(ip, today).run();
+    } else {
+      await c.env.DB.prepare(
+        "UPDATE usage_stats SET count = count + 1 WHERE ip = ? AND date = ?"
+      ).bind(ip, today).run();
+    }
+    return true;
+  } catch (e: any) {
+    // DB 查询失败时放行（表可能不存在）
+    console.warn('[checkQuota] DB error, skipping:', e.message);
+    return true;
   }
-  return true;
 };
 
 // ============================================================
@@ -282,6 +291,15 @@ app.post('/generate-prompt', async (c) => {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完 (3/3)，请明天再试或联系管理员" }, 429);
 
     const { poem } = await c.req.json();
+
+    // 诊断日志：确认环境变量状态
+    console.log('[Prompt Gen] Env check:', {
+      hasAgnesAI: !!c.env.AGNES_AI_API_KEY,
+      hasModelScope: !!c.env.MODEL_SCOPE_API_KEY,
+      hasDB: !!c.env.DB,
+      poemLength: poem?.length,
+    });
+
     const systemInstruction = `你是一位集"中国古典诗词研究专家"、"美学视觉专家"与"奥斯卡金像奖导演"于一身的跨界大师。
 你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本。
 
