@@ -255,13 +255,26 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
 }
 
 async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
-  const response = await fetch(`${MODELSCOPE_BASE}/v1/audio/speech`, {
+  const url = `${MODELSCOPE_BASE}/v1/audio/speech`;
+  const body = JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' });
+  console.log('[ModelScope TTS] Request:', { url, bodyPreview: body.slice(0, 200) });
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' }),
+    body,
   });
-  if (!response.ok) throw new Error(`ModelScope TTS error ${response.status}`);
-  return await response.arrayBuffer();
+  const respText = await response.text();
+  console.log('[ModelScope TTS] Response:', { status: response.status, bodyPreview: respText.slice(0, 500) });
+  if (!response.ok) throw new Error(`ModelScope TTS error ${response.status}: ${respText.slice(0, 300)}`);
+  
+  // 重新获取 body（已读过了）
+  const audioRes = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body,
+  });
+  return await audioRes.arrayBuffer();
 }
 
 // ============================================================
