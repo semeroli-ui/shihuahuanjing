@@ -24,10 +24,10 @@ import {
 } from 'lucide-react';
 import { poeticService } from './services/poeticService';
 
-// 扩展 window 接口以支持 aistudio API
+// aistudio 兼容声明（已废弃）
 declare global {
   interface Window {
-    aistudio: {
+    aistudio?: {
       hasSelectedApiKey: () => Promise<boolean>;
       openSelectKey: () => Promise<void>;
     };
@@ -75,19 +75,11 @@ export default function App() {
 
   useEffect(() => {
     const checkKeyStatus = async () => {
-      // 1. 检查 AI Studio 官方 Key 选择状态
-      if (window.aistudio) {
-        const selected = await window.aistudio.hasSelectedApiKey();
-        if (selected) {
-          setHasKey(true);
-        }
-      }
-
-      // 2. 检查后端环境变量与登录状态
+      // 检查后端 Agnes AI API Key 与登录状态
       try {
         const res = await fetch('/api/health');
-        const data = await res.json() as { hasProKey: boolean; hasStudioKey: boolean; isAdmin: boolean };
-        setHasKey(data.hasProKey || data.hasStudioKey);
+        const data = await res.json() as { hasAgnesAIKey: boolean; hasModelScopeKey: boolean; isAdmin: boolean };
+        setHasKey(data.hasAgnesAIKey || data.hasModelScopeKey);
         setIsAdmin(data.isAdmin);
       } catch (e) {
         setHasKey(false);
@@ -120,17 +112,7 @@ export default function App() {
   }, [cooldown]);
 
   const handleOpenKeyDialog = async () => {
-    if (window.aistudio) {
-      try {
-        await window.aistudio.openSelectKey();
-        setHasKey(true);
-        setStatusMessage('API Key 已通过官方通道配置');
-      } catch (e) {
-        console.error("Failed to open key dialog", e);
-      }
-    } else {
-      setStatusMessage('请在 Cloudflare 控制台配置环境变量');
-    }
+    setStatusMessage('请在 Cloudflare Pages 控制台配置 AGNES_AI_API_KEY 环境变量');
   };
 
   const handleLogin = async () => {
@@ -232,7 +214,7 @@ export default function App() {
     if (!visualPrompt || !hasKey || cooldown > 0) return;
     setIsGeneratingVideo(true);
     setVideoUrl(null);
-    setVideoStatus('正在唤醒 Veo 3.1 旗舰模型，正在生成 1080p 视频...');
+    setVideoStatus('正在唤醒 Agnes AI 视频模型，生成意境画卷...');
     
     try {
       console.log('Starting video generation with prompt:', visualPrompt.english);
@@ -287,7 +269,7 @@ export default function App() {
             // 检查是否有进度信息
             const metadata = result.metadata as any;
             const progress = metadata?.progressPercent || 0;
-            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}%` : '视频绘制中，请稍候... (Veo 正在精雕细琢)');
+            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}%` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
             setTimeout(poll, 15000); // 15秒轮询一次
           }
         } catch (e: any) {
@@ -307,10 +289,10 @@ export default function App() {
     } catch (error: any) {
       setIsGeneratingVideo(false);
       if (error.message?.includes('频率过高') || error.message?.includes('429')) {
-        setVideoStatus('触发 API 频率限制。Veo 预览版配额有限，请等待倒计时结束后重试。');
+        setVideoStatus('触发 API 频率限制，请等待倒计时结束后重试。');
         setCooldown(60); // 开启 60 秒冷却
       } else if (error.message?.includes('Requested entity was not found')) {
-        setVideoStatus('API Key 校验失败，请重试选择 Key。');
+        setVideoStatus('API Key 校验失败，请检查后端配置。');
         setHasKey(false);
       } else {
         setVideoStatus(`生成失败: ${error.message || '未知错误'}`);
@@ -640,8 +622,8 @@ export default function App() {
 
                 {!hasKey && (
                   <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] rounded-sm flex flex-col gap-2">
-                    <p className="font-bold">⚠️ 需要 API Key 以使用 Veo 视频模型</p>
-                    <p>请点击下方按钮选择您的 Google Cloud 计费项目 API Key。</p>
+                    <p className="font-bold">⚠️ 未检测到 API Key</p>
+                    <p>请在 Cloudflare Pages 控制台配置 AGNES_AI_API_KEY 环境变量。</p>
                     <button 
                       onClick={handleOpenKeyDialog}
                       className="bg-amber-600 text-white py-1 px-3 rounded-sm hover:bg-amber-700 transition-colors self-start"
@@ -764,7 +746,7 @@ export default function App() {
                         </div>
                       </div>
                       <p className="text-zen-ink/40 font-serif tracking-[0.2em] animate-pulse">
-                        {videoStatus || '正在唤醒 Veo 绘制画卷...'}
+                        {videoStatus || '正在唤醒 AI 绘制画卷...'}
                       </p>
                     </div>
                   )}
@@ -777,9 +759,8 @@ export default function App() {
 
       <footer className="mt-24 py-16 border-t border-zen-ink/5 flex flex-col items-center gap-8">
         <div className="flex gap-12 text-[10px] tracking-[0.5em] text-zen-ink/20 uppercase font-bold">
-          <span>Gemini 3.1 Pro</span>
-          <span>Veo Video Engine</span>
-          <span>Imagen 3 Art</span>
+          <span>Agnes AI Engine</span>
+          <span>Cloudflare Edge</span>
         </div>
         <div className="text-center space-y-2">
           {!isAdmin && (
@@ -897,15 +878,15 @@ export default function App() {
                     {healthStatus && (
                       <div className="grid grid-cols-1 gap-2 text-[10px] font-mono">
                         <div className="flex justify-between border-b border-zen-ink/5 pb-1">
-                          <span>免费层 (解析):</span> 
-                          <span className={healthStatus.hasProKey ? "text-green-600" : "text-amber-600"}>
-                            {healthStatus.hasProKey ? `已就绪 (${healthStatus.proKeyCount}个 Key)` : "未配置 (将使用高权限 Key)"}
+                          <span>Agnes AI (主力):</span>
+                          <span className={healthStatus.hasAgnesAIKey ? "text-green-600" : "text-red-600 font-bold"}>
+                            {healthStatus.hasAgnesAIKey ? "已就绪" : "未配置 (核心功能不可用)"}
                           </span>
                         </div>
                         <div className="flex justify-between border-b border-zen-ink/5 pb-1">
-                          <span>高权限 (Veo/TTS):</span> 
-                          <span className={healthStatus.hasStudioKey ? "text-green-600" : "text-red-600 font-bold"}>
-                            {healthStatus.hasStudioKey ? "已就绪" : "未配置 (核心功能将受限)"}
+                          <span>ModelScope (备用):</span>
+                          <span className={healthStatus.hasModelScopeKey ? "text-green-600" : "text-amber-600"}>
+                            {healthStatus.hasModelScopeKey ? "已就绪" : "未配置 (可选备用)"}
                           </span>
                         </div>
                         <div className="flex justify-between border-b border-zen-ink/5 pb-1">
