@@ -254,37 +254,10 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
   throw new Error('ModelScope Image timeout (60s)');
 }
 
+// ModelScope 不支持 OpenAI 兼容的 TTS HTTP API，仅提供 Python SDK
+// 暂时禁用，等待 Agnes AI SSL 问题解决后启用
 async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
-  // 尝试多个可能的 TTS 端点
-  const endpoints = [
-    `${MODELSCOPE_BASE}/v1/audio/speech`,
-    `${MODELSCOPE_BASE}/v1/audio/generations`,
-  ];
-
-  for (const url of endpoints) {
-    try {
-      const body = JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' });
-      console.log('[ModelScope TTS] Trying:', url);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body,
-      });
-      const respText = await response.text();
-      console.log('[ModelScope TTS] Response:', { url, status: response.status, bodyPreview: respText.slice(0, 500) });
-      if (!response.ok) continue; // 试下一个端点
-      // 成功，重新请求获取音频（上面已经读了 body）
-      const audioRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body,
-      });
-      return await audioRes.arrayBuffer();
-    } catch (err: any) {
-      console.error('[ModelScope TTS] Error:', { url, error: err.message });
-    }
-  }
-  throw new Error('ModelScope TTS: all endpoints failed (404)');
+  throw new Error('ModelScope TTS: HTTP API not available, only Python SDK supported');
 }
 
 // ============================================================
@@ -605,36 +578,21 @@ app.post('/generate-image', async (c) => {
 
 // ============================================================
 // 9. 诗词吟诵接口 (ModelScope TTS -> Agnes AI TTS)
+// 注意: ModelScope 不支持 OpenAI 兼容的 TTS HTTP API，仅提供 Python SDK
+// 当前依赖 Agnes AI，但 Agnes AI SSL 证书有问题，暂时不可用
 // ============================================================
 app.post('/generate-speech', async (c) => {
   try {
     if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
     const { text } = await c.req.json();
-    const ttsText = `请吟诵这首古诗：${text}`;
 
-    // 策略1: ModelScope TTS (主力)
-    const msKey = c.env.MODEL_SCOPE_API_KEY;
-    if (msKey) {
-      try {
-        console.log('[TTS] Trying ModelScope...');
-        const audioBuffer = await callModelScopeTTS(msKey, ttsText);
-        const bytes = new Uint8Array(audioBuffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        const base64Audio = btoa(binary);
-        console.log('[TTS] ModelScope success');
-        return c.json({ base64Audio });
-      } catch (err: any) {
-        console.error('[TTS] ModelScope failed:', err.message);
-      }
-    }
-
-    // 策略2: Agnes AI TTS 兜底
+    // ModelScope TTS 不支持 HTTP API，直接尝试 Agnes AI
     const agnesKey = c.env.AGNES_AI_API_KEY;
     if (agnesKey) {
       try {
         console.log('[TTS] Trying Agnes AI...');
+        const ttsText = `请吟诵这首古诗：${text}`;
         const audioBuffer = await callAgnesAITTS(agnesKey, ttsText);
         const bytes = new Uint8Array(audioBuffer);
         let binary = '';
@@ -644,10 +602,22 @@ app.post('/generate-speech', async (c) => {
         return c.json({ base64Audio });
       } catch (err: any) {
         console.error('[TTS] Agnes AI failed:', err.message);
+        // Agnes AI SSL 问题，返回友好提示
+        if (err.message?.includes('525')) {
+          return c.json({ 
+            error: "语音吟诵服务暂时不可用", 
+            details: "Agnes AI 服务端 SSL 证书配置有问题，请联系 Agnes AI 技术支持",
+            workaround: "建议暂时使用其他功能：解析意境、生成图片、生成视频"
+          }, 503);
+        }
       }
     }
 
-    return c.json({ error: "所有语音合成服务均不可用" }, 500);
+    return c.json({ 
+      error: "语音吟诵服务暂时不可用",
+      details: "当前无可用的 TTS 服务提供商。ModelScope 不支持 HTTP API，Agnes AI SSL 证书有问题。",
+      workaround: "建议暂时使用其他功能：解析意境、生成图片、生成视频"
+    }, 503);
   } catch (error: any) {
     console.error("TTS Error:", error);
     return c.json({ error: `吟诵生成失败: ${error.message || '模型可能暂不可用'}`, details: error.message }, 500);
