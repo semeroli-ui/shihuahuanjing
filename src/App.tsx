@@ -43,6 +43,7 @@ export default function App() {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [browserAudioText, setBrowserAudioText] = useState<string | null>(null);
   const [imageStatus, setImageStatus] = useState('');
   const [videoStatus, setVideoStatus] = useState('');
   const [audioStatus, setAudioStatus] = useState('');
@@ -172,13 +173,22 @@ export default function App() {
       // 自动生成语音吟诵
       setAudioStatus('正在生成诗词吟诵...');
       try {
-        // 清理旧的音频 URL
+        // 清理旧的音频
         if (audioUrl && audioUrl.startsWith('blob:')) {
           URL.revokeObjectURL(audioUrl);
         }
-        const audio = await poeticService.generateSpeech(poem);
-        setAudioUrl(audio);
-        setAudioStatus('吟诵生成成功');
+        setAudioUrl(null);
+        setBrowserAudioText(null);
+
+        
+        const result = await poeticService.generateSpeech(poem);
+        if (result.type === 'url' && result.url) {
+          setAudioUrl(result.url);
+          setAudioStatus('吟诵生成成功');
+        } else if (result.type === 'browser' && result.text) {
+          setBrowserAudioText(result.text);
+          setAudioStatus('浏览器语音就绪（无法下载）');
+        }
       } catch (e: any) {
         setAudioStatus(`吟诵生成失败: ${e.message}`);
       }
@@ -197,7 +207,12 @@ export default function App() {
     setImageStatus('正在绘制 4K 诗意原画...');
     try {
       const response = await poeticService.generateImage(visualPrompt.english) as any;
-      if (response.generatedImages?.[0]?.image?.imageBytes) {
+      if (response.generatedImages?.[0]?.image?.url) {
+        // URL 格式 (ModelScope)
+        setGeneratedImage(response.generatedImages[0].image.url);
+        setImageStatus('原画绘制成功！');
+      } else if (response.generatedImages?.[0]?.image?.imageBytes) {
+        // Base64 格式 (Agnes AI)
         const base64Image = response.generatedImages[0].image.imageBytes;
         setGeneratedImage(`data:image/png;base64,${base64Image}`);
         setImageStatus('原画绘制成功！');
@@ -541,7 +556,27 @@ export default function App() {
                     <p className="text-zen-ink/80 leading-loose serif-text text-base">
                       {visualPrompt.chinese}
                     </p>
-                    {audioUrl && (
+                    {browserAudioText ? (
+                      <div className="mt-4 pt-4 border-t border-zen-ink/5 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-zen-ink/40 whitespace-nowrap italic">浏览器语音（无下载）</span>
+                          <button 
+                            onClick={() => {
+                              if ('speechSynthesis' in window) {
+                                speechSynthesis.cancel();
+                                const utterance = new SpeechSynthesisUtterance(browserAudioText);
+                                utterance.lang = 'zh-CN';
+                                utterance.rate = 0.85;
+                                speechSynthesis.speak(utterance);
+                              }
+                            }}
+                            className="text-[10px] text-zen-accent hover:underline flex items-center gap-1"
+                          >
+                            <Play size={10} /> 播放吟诵
+                          </button>
+                        </div>
+                      </div>
+                    ) : audioUrl && (
                       <div className="mt-4 pt-4 border-t border-zen-ink/5 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-zen-ink/40 whitespace-nowrap italic">AI 吟诵已就绪</span>

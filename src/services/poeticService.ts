@@ -82,37 +82,40 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 6. 诗词吟诵 (TTS, 调用后端代理)
-  async generateSpeech(text: string) {
-    const res = await fetch('/api/generate-speech', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    
-    const data = await res.json().catch(() => ({})) as any;
-    if (!res.ok) {
-      // 构建完整的错误信息
-      let errorMsg = data.error || "吟诵生成失败";
-      if (data.details) {
-        errorMsg += `\n详情: ${data.details}`;
+  // 6. 诗词吟诵 (后端 TTS -> 浏览器兜底)
+  async generateSpeech(text: string): Promise<{ type: 'url' | 'browser'; url?: string; text?: string }> {
+    // 先尝试后端 TTS
+    try {
+      const res = await fetch('/api/generate-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) {
+        // 构建完整的错误信息
+        let errorMsg = data.error || "吟诵生成失败";
+        if (data.details) errorMsg += `\n${data.details}`;
+        if (data.workaround) errorMsg += `\n${data.workaround}`;
+        throw new Error(errorMsg);
       }
-      if (data.workaround) {
-        errorMsg += `\n建议: ${data.workaround}`;
+      
+      const { base64Audio } = data as { base64Audio?: string };
+      if (base64Audio) {
+        const pcmData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
+        const wavData = this.encodeWAV(pcmData, 24000);
+        const blob = new Blob([wavData], { type: 'audio/wav' });
+        return { type: 'url', url: URL.createObjectURL(blob) };
       }
-      throw new Error(errorMsg);
+      throw new Error("未生成音频数据");
+    } catch {
+      // 后端失败，尝试浏览器 TTS
+      if ('speechSynthesis' in window) {
+        return { type: 'browser', text };
+      }
+      throw new Error("无可用的语音合成服务");
     }
-    
-    const { base64Audio, error } = data as { base64Audio?: string; error?: string };
-    if (error) throw new Error(error);
-
-    if (base64Audio) {
-      const pcmData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
-      const wavData = this.encodeWAV(pcmData, 24000);
-      const blob = new Blob([wavData], { type: 'audio/wav' });
-      return URL.createObjectURL(blob);
-    }
-    throw new Error("未生成音频数据");
   }
 
   // 7. 管理员登录
