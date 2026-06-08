@@ -195,7 +195,7 @@ async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?:
   const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B', messages, temperature: 0.7, max_tokens: 2048 }),
+    body: JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B-Thinking', messages, temperature: 0.7, max_tokens: 2048 }),
   });
   if (!response.ok) throw new Error(`ModelScope Text error ${response.status}`);
   const data = await response.json() as any;
@@ -309,24 +309,24 @@ app.post('/generate-prompt', async (c) => {
 
     let text = '';
 
-    // 策略1: Agnes AI
-    const agnesKey = c.env.AGNES_AI_API_KEY;
-    if (agnesKey) {
+    // 策略1: ModelScope (主力，稳定可用)
+    const msKey = c.env.MODEL_SCOPE_API_KEY;
+    if (msKey) {
       try {
-        text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
-        console.log('[Prompt Gen] Agnes AI success');
+        text = await callModelScopeText(msKey, poem, systemInstruction);
+        console.log('[Prompt Gen] ModelScope success');
       } catch (err: any) {
-        console.error('[Prompt Gen] Agnes AI failed:', err.message);
+        console.error('[Prompt Gen] ModelScope failed:', err.message);
       }
     }
 
-    // 策略2: ModelScope 兜底
-    if (!text && c.env.MODEL_SCOPE_API_KEY) {
+    // 策略2: Agnes AI 兜底
+    if (!text && agnesKey) {
       try {
-        text = await callModelScopeText(c.env.MODEL_SCOPE_API_KEY, poem, systemInstruction);
-        console.log('[Prompt Gen] ModelScope fallback success');
+        text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
+        console.log('[Prompt Gen] Agnes AI fallback success');
       } catch (err: any) {
-        console.error('[Prompt Gen] ModelScope also failed:', err.message);
+        console.error('[Prompt Gen] Agnes AI also failed:', err.message);
       }
     }
 
@@ -493,7 +493,7 @@ app.post('/poll-video', async (c) => {
 });
 
 // ============================================================
-// 8. 图像生成接口 (Agnes AI -> ModelScope)
+// 8. 图像生成接口 (ModelScope -> Agnes AI)
 // ============================================================
 app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
@@ -501,14 +501,14 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const enhancedPrompt = `A cinematic masterpiece of Chinese traditional painting style. ${prompt}. Ultra-high definition, 4k quality, photorealistic, intricate details, elegant composition, traditional Chinese aesthetic.`;
 
-  // 策略1: Agnes AI
-  const agnesKey = c.env.AGNES_AI_API_KEY;
-  if (agnesKey) {
+  // 策略1: ModelScope (主力)
+  const msKey = c.env.MODEL_SCOPE_API_KEY;
+  if (msKey) {
     try {
-      console.log('[Image Gen] Trying Agnes AI...');
-      const result = await callAgnesAIImage(agnesKey, enhancedPrompt);
+      console.log('[Image Gen] Trying ModelScope...');
+      const result = await callModelScopeImage(msKey, enhancedPrompt);
       if (result.b64_json || result.url) {
-        console.log('[Image Gen] Agnes AI success');
+        console.log('[Image Gen] ModelScope success');
         return c.json({
           generatedImages: result.b64_json
             ? [{ image: { imageBytes: result.b64_json } }]
@@ -516,16 +516,16 @@ app.post('/generate-image', async (c) => {
         });
       }
     } catch (err: any) {
-      console.error('[Image Gen] Agnes AI failed:', err.message);
+      console.error('[Image Gen] ModelScope failed:', err.message);
     }
   }
 
-  // 策略2: ModelScope 兜底
-  const msKey = c.env.MODEL_SCOPE_API_KEY;
-  if (msKey) {
+  // 策略2: Agnes AI 兜底
+  const agnesKey = c.env.AGNES_AI_API_KEY;
+  if (agnesKey) {
     try {
-      console.log('[Image Gen] Fallback to ModelScope...');
-      const result = await callModelScopeImage(msKey, enhancedPrompt);
+      console.log('[Image Gen] Fallback to Agnes AI...');
+      const result = await callAgnesAIImage(agnesKey, enhancedPrompt);
       if (result.b64_json || result.url) {
         console.log('[Image Gen] ModelScope success');
         return c.json({
@@ -543,7 +543,7 @@ app.post('/generate-image', async (c) => {
 });
 
 // ============================================================
-// 9. 诗词吟诵接口 (Agnes AI TTS -> ModelScope TTS)
+// 9. 诗词吟诵接口 (ModelScope TTS -> Agnes AI TTS)
 // ============================================================
 app.post('/generate-speech', async (c) => {
   try {
@@ -552,7 +552,26 @@ app.post('/generate-speech', async (c) => {
     const { text } = await c.req.json();
     const ttsText = `请吟诵这首古诗：${text}`;
 
-    // 策略1: Agnes AI TTS
+    // 策略1: ModelScope TTS (主力)
+    const msKey = c.env.MODEL_SCOPE_API_KEY;
+    if (msKey) {
+      try {
+        console.log('[TTS] Trying ModelScope...');
+        const audioBuffer = await callModelScopeTTS(msKey, ttsText);
+        const bytes = new Uint8Array(audioBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64Audio = btoa(binary);
+        console.log('[TTS] ModelScope success');
+        return c.json({ base64Audio });
+      } catch (err: any) {
+        console.error('[TTS] ModelScope failed:', err.message);
+      }
+    }
+
+    // 策略2: Agnes AI TTS 兜底
+    const agnesKey = c.env.AGNES_AI_API_KEY;
+    if (agnesKey) {
     const agnesKey = c.env.AGNES_AI_API_KEY;
     if (agnesKey) {
       try {
@@ -566,23 +585,6 @@ app.post('/generate-speech', async (c) => {
         return c.json({ base64Audio });
       } catch (err: any) {
         console.error('[TTS] Agnes AI failed:', err.message);
-      }
-    }
-
-    // 策略2: ModelScope TTS 兜底
-    const msKey = c.env.MODEL_SCOPE_API_KEY;
-    if (msKey) {
-      try {
-        console.log('[TTS] Fallback to ModelScope...');
-        const audioBuffer = await callModelScopeTTS(msKey, ttsText);
-        const bytes = new Uint8Array(audioBuffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        const base64Audio = btoa(binary);
-        console.log('[TTS] ModelScope success');
-        return c.json({ base64Audio });
-      } catch (err: any) {
-        console.error('[TTS] ModelScope also failed:', err.message);
       }
     }
 
