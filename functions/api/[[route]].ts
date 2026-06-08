@@ -255,26 +255,36 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
 }
 
 async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
-  const url = `${MODELSCOPE_BASE}/v1/audio/speech`;
-  const body = JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' });
-  console.log('[ModelScope TTS] Request:', { url, bodyPreview: body.slice(0, 200) });
+  // 尝试多个可能的 TTS 端点
+  const endpoints = [
+    `${MODELSCOPE_BASE}/v1/audio/speech`,
+    `${MODELSCOPE_BASE}/v1/audio/generations`,
+  ];
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body,
-  });
-  const respText = await response.text();
-  console.log('[ModelScope TTS] Response:', { status: response.status, bodyPreview: respText.slice(0, 500) });
-  if (!response.ok) throw new Error(`ModelScope TTS error ${response.status}: ${respText.slice(0, 300)}`);
-  
-  // 重新获取 body（已读过了）
-  const audioRes = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body,
-  });
-  return await audioRes.arrayBuffer();
+  for (const url of endpoints) {
+    try {
+      const body = JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' });
+      console.log('[ModelScope TTS] Trying:', url);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body,
+      });
+      const respText = await response.text();
+      console.log('[ModelScope TTS] Response:', { url, status: response.status, bodyPreview: respText.slice(0, 500) });
+      if (!response.ok) continue; // 试下一个端点
+      // 成功，重新请求获取音频（上面已经读了 body）
+      const audioRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body,
+      });
+      return await audioRes.arrayBuffer();
+    } catch (err: any) {
+      console.error('[ModelScope TTS] Error:', { url, error: err.message });
+    }
+  }
+  throw new Error('ModelScope TTS: all endpoints failed (404)');
 }
 
 // ============================================================
