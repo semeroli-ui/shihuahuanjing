@@ -346,25 +346,25 @@ app.post('/generate-prompt', async (c) => {
 
     let text = '';
 
-    // 策略1: ModelScope (主力，稳定可用)
-    const msKey = c.env.MODEL_SCOPE_API_KEY;
-    if (msKey) {
+    // 策略1: Agnes AI (主力，同步返回，体验更好)
+    const agnesKey = c.env.AGNES_AI_API_KEY;
+    if (agnesKey) {
       try {
-        text = await callModelScopeText(msKey, poem, systemInstruction);
-        console.log('[Prompt Gen] ModelScope success');
+        text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
+        console.log('[Prompt Gen] Agnes AI success');
       } catch (err: any) {
-        console.error('[Prompt Gen] ModelScope failed:', err.message);
+        console.error('[Prompt Gen] Agnes AI failed:', err.message);
       }
     }
 
-    // 策略2: Agnes AI 兜底
-    const agnesKey = c.env.AGNES_AI_API_KEY;
-    if (!text && agnesKey) {
+    // 策略2: ModelScope 兜底 (稳定可用)
+    const msKey = c.env.MODEL_SCOPE_API_KEY;
+    if (!text && msKey) {
       try {
-        text = await callAgnesAIChat(agnesKey, poem, systemInstruction);
-        console.log('[Prompt Gen] Agnes AI fallback success');
+        text = await callModelScopeText(msKey, poem, systemInstruction);
+        console.log('[Prompt Gen] ModelScope fallback success');
       } catch (err: any) {
-        console.error('[Prompt Gen] Agnes AI also failed:', err.message);
+        console.error('[Prompt Gen] ModelScope also failed:', err.message);
       }
     }
 
@@ -531,7 +531,7 @@ app.post('/poll-video', async (c) => {
 });
 
 // ============================================================
-// 8. 图像生成接口 (ModelScope -> Agnes AI)
+// 8. 图像生成接口 (Agnes AI -> ModelScope)
 // ============================================================
 app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
@@ -539,34 +539,34 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const enhancedPrompt = `A cinematic masterpiece of Chinese traditional painting style. ${prompt}. Ultra-high definition, 4k quality, photorealistic, intricate details, elegant composition, traditional Chinese aesthetic.`;
 
-  // 策略1: ModelScope (主力)
-  const msKey = c.env.MODEL_SCOPE_API_KEY;
-  if (msKey) {
-    try {
-      console.log('[Image Gen] Trying ModelScope...');
-      const result = await callModelScopeImage(msKey, enhancedPrompt);
-      if (result.url) {
-        console.log('[Image Gen] ModelScope success');
-        return c.json({ generatedImages: [{ image: { url: result.url } }] });
-      }
-    } catch (err: any) {
-      console.error('[Image Gen] ModelScope failed:', err.message);
-    }
-  }
-
-  // 策略2: Agnes AI 兜底
+  // 策略1: Agnes AI (主力，同步返回，体验更好)
   const agnesKey = c.env.AGNES_AI_API_KEY;
   if (agnesKey) {
     try {
-      console.log('[Image Gen] Fallback to Agnes AI...');
+      console.log('[Image Gen] Trying Agnes AI...');
       const result = await callAgnesAIImage(agnesKey, enhancedPrompt);
       if (result.b64_json || result.url) {
-        console.log('[Image Gen] ModelScope success');
+        console.log('[Image Gen] Agnes AI success');
         return c.json({
           generatedImages: result.b64_json
             ? [{ image: { imageBytes: result.b64_json } }]
             : [{ image: { url: result.url } }]
         });
+      }
+    } catch (err: any) {
+      console.error('[Image Gen] Agnes AI failed:', err.message);
+    }
+  }
+
+  // 策略2: ModelScope 兜底 (异步轮询，需要等待)
+  const msKey = c.env.MODEL_SCOPE_API_KEY;
+  if (msKey) {
+    try {
+      console.log('[Image Gen] Fallback to ModelScope...');
+      const result = await callModelScopeImage(msKey, enhancedPrompt);
+      if (result.url) {
+        console.log('[Image Gen] ModelScope success');
+        return c.json({ generatedImages: [{ image: { url: result.url } }] });
       }
     } catch (err: any) {
       console.error('[Image Gen] ModelScope also failed:', err.message);
