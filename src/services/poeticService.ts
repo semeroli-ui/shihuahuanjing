@@ -18,7 +18,7 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 2. 调用 Veo 生成视频 (调用后端代理)
+  // 2. 调用视频生成 (调用后端代理)
   async generateVideo(prompt: string) {
     const res = await fetch('/api/generate-video', {
       method: 'POST',
@@ -27,7 +27,10 @@ export class PoeticService {
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({})) as any;
-      throw new Error(errorData.error || errorData.message || "后端生成请求失败");
+      let errorMsg = errorData.error || "后端生成请求失败";
+      if (errorData.details) errorMsg += `\n详情: ${errorData.details}`;
+      if (errorData.workaround) errorMsg += `\n建议: ${errorData.workaround}`;
+      throw new Error(errorMsg);
     }
     return await res.json();
   }
