@@ -194,13 +194,19 @@ async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?:
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const response = await fetch(`${MODELSCOPE_BASE}/v1/chat/completions`, {
+  const url = `${MODELSCOPE_BASE}/v1/chat/completions`;
+  const body = JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B', messages, temperature: 0.7, max_tokens: 2048, enable_thinking: true });
+  console.log('[ModelScope] Request:', { url, model: 'Qwen/Qwen3-235B-A22B', messageCount: messages.length });
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B-Thinking', messages, temperature: 0.7, max_tokens: 2048 }),
+    body,
   });
-  if (!response.ok) throw new Error(`ModelScope Text error ${response.status}`);
-  const data = await response.json() as any;
+  const respText = await response.text();
+  console.log('[ModelScope] Response:', { status: response.status, bodyPreview: respText.slice(0, 500) });
+  if (!response.ok) throw new Error(`ModelScope Text error ${response.status}: ${respText.slice(0, 300)}`);
+  const data = JSON.parse(respText) as any;
   return data.choices?.[0]?.message?.content || '';
 }
 
