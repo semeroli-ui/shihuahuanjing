@@ -92,8 +92,15 @@ export class PoeticService {
     
     const data = await res.json().catch(() => ({})) as any;
     if (!res.ok) {
-      const detailStr = typeof data.details === 'object' ? JSON.stringify(data.details) : (data.details || "");
-      throw new Error(data.error || detailStr || "吟诵生成失败");
+      // 构建完整的错误信息
+      let errorMsg = data.error || "吟诵生成失败";
+      if (data.details) {
+        errorMsg += `\n详情: ${data.details}`;
+      }
+      if (data.workaround) {
+        errorMsg += `\n建议: ${data.workaround}`;
+      }
+      throw new Error(errorMsg);
     }
     
     const { base64Audio, error } = data as { base64Audio?: string; error?: string };
