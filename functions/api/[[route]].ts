@@ -187,12 +187,14 @@ async function callAgnesAITTS(apiKey: string, text: string): Promise<ArrayBuffer
 // ModelScope 备用工具
 // ============================================================
 
+const MODELSCOPE_BASE = 'https://api-inference.modelscope.cn';
+
 async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?: string): Promise<string> {
   const messages: Array<{ role: string; content: string }> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const response = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
+  const response = await fetch(`${MODELSCOPE_BASE}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model: 'Qwen/Qwen3-235B-A22B-Thinking', messages, temperature: 0.7, max_tokens: 2048 }),
@@ -202,19 +204,52 @@ async function callModelScopeText(apiKey: string, prompt: string, systemPrompt?:
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
-  const response = await fetch('https://api-inference.modelscope.cn/v1/images/generations', {
+/**
+ * ModelScope 图片生成 (异步模式)
+ * 1. 提交任务 -> task_id
+ * 2. 轮询 /v1/tasks/{task_id} 直到 SUCCEED/FAILED
+ * 3. 返回图片 URL
+ */
+async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ url?: string }> {
+  // Step 1: 提交异步任务
+  const submitRes = await fetch(`${MODELSCOPE_BASE}/v1/images/generations`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'AI-ModelScope/stable-diffusion-xl-base-1.0', prompt, n: 1, size: '1024x1024' }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-ModelScope-Async-Mode': 'true',
+    },
+    body: JSON.stringify({ model: 'Tongyi-MAI/Z-Image', prompt }),
   });
-  if (!response.ok) throw new Error(`ModelScope Image error ${response.status}`);
-  const data = await response.json() as any;
-  return data.images?.[0] || {};
+  if (!submitRes.ok) throw new Error(`ModelScope Image submit error ${submitRes.status}: ${await submitRes.text()}`);
+  const { task_id } = await submitRes.json() as any;
+  if (!task_id) throw new Error('ModelScope Image: no task_id returned');
+
+  // Step 2: 轮询结果 (最多60秒，每5秒一次)
+  for (let i = 0; i < 12; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const pollRes = await fetch(`${MODELSCOPE_BASE}/v1/tasks/${task_id}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-ModelScope-Task-Type': 'image_generation',
+      },
+    });
+    if (!pollRes.ok) throw new Error(`ModelScope Image poll error ${pollRes.status}`);
+    const data = await pollRes.json() as any;
+
+    if (data.task_status === 'SUCCEED') {
+      return { url: data.output_images?.[0] };
+    }
+    if (data.task_status === 'FAILED') {
+      throw new Error(`ModelScope Image generation failed`);
+    }
+    // RUNNING -> 继续轮询
+  }
+  throw new Error('ModelScope Image timeout (60s)');
 }
 
 async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
-  const response = await fetch('https://api-inference.modelscope.cn/v1/audio/speech', {
+  const response = await fetch(`${MODELSCOPE_BASE}/v1/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model: 'FunAudioLLM/CosyVoice2-0.5B', input: text, voice: 'FunAudioLLM/CosyVoice2-0.5B:alex', response_format: 'mp3' }),
@@ -507,13 +542,9 @@ app.post('/generate-image', async (c) => {
     try {
       console.log('[Image Gen] Trying ModelScope...');
       const result = await callModelScopeImage(msKey, enhancedPrompt);
-      if (result.b64_json || result.url) {
+      if (result.url) {
         console.log('[Image Gen] ModelScope success');
-        return c.json({
-          generatedImages: result.b64_json
-            ? [{ image: { imageBytes: result.b64_json } }]
-            : [{ image: { url: result.url } }]
-        });
+        return c.json({ generatedImages: [{ image: { url: result.url } }] });
       }
     } catch (err: any) {
       console.error('[Image Gen] ModelScope failed:', err.message);
