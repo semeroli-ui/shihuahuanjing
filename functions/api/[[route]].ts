@@ -70,7 +70,7 @@ const checkQuota = async (c: any) => {
 // Agnes AI 调用工具
 // ============================================================
 
-const AGNES_AI_BASE = 'https://api.agnesai.com';
+const AGNES_AI_BASE = 'https://apihub.agnes-ai.com';
 
 /**
  * Agnes AI 文本对话 (用于诗词解析)
@@ -136,16 +136,19 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
  * Agnes AI 视频生成
  */
 async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
-  const response = await fetch(`${AGNES_AI_BASE}/v1/videos/generations`, {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/videos`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'agnes-ai-video',
+      model: 'agnes-video-v2.0',
       prompt,
-      n: 1,
+      height: 768,
+      width: 1152,
+      num_frames: 121,
+      frame_rate: 24,
     }),
   });
 
