@@ -107,8 +107,13 @@ async function callAgnesAIChat(apiKey: string, userPrompt: string, systemPrompt?
 
 /**
  * Agnes AI 图片生成
+ * 自动追加质量增强后缀，防止模糊
  */
 async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
+  // 质量增强后缀：确保高清、锐利、细节丰富
+  const qualitySuffix = ', hyper-detailed, sharp focus, 8k resolution, ultra-clear, high fidelity, professional photography, award-winning photography, masterpiece, best quality';
+  const enhancedPrompt = prompt + qualitySuffix;
+
   const response = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
     method: 'POST',
     headers: {
@@ -117,7 +122,7 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
     },
     body: JSON.stringify({
       model: 'agnes-ai-v1',
-      prompt,
+      prompt: enhancedPrompt,
       n: 1,
       size: '1024x1024',
     }),
@@ -134,10 +139,15 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
 
 /**
  * Agnes AI 视频生成（异步模式）
+ * 自动追加质量增强后缀，防止模糊
  * Step 1: POST /v1/videos → { id, status: "queued", progress: 0 }
  * Step 2: GET /v1/videos/{id} → { status, progress, video_url }
  */
 async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
+  // 质量增强后缀：确保视频高清、锐利
+  const qualitySuffix = ', cinematic high definition, sharp details, clear visuals, 4k quality, professional color grading, best quality';
+  const enhancedPrompt = prompt + qualitySuffix;
+
   const response = await fetch(`${AGNES_AI_BASE}/v1/videos`, {
     method: 'POST',
     headers: {
@@ -146,7 +156,7 @@ async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
     },
     body: JSON.stringify({
       model: 'agnes-video-v2.0',
-      prompt,
+      prompt: enhancedPrompt,
       height: 768,
       width: 1152,
       num_frames: 121,
@@ -364,11 +374,22 @@ app.post('/generate-prompt', async (c) => {
     });
 
     const systemInstruction = `你是一位集"中国古典诗词研究专家"、"美学视觉专家"与"奥斯卡金像奖导演"于一身的跨界大师。
-你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本。
+你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本与高清艺术提示词。
 
 输出必须为严格的 JSON 格式：{"chinese": "...", "english": "..."}
 - chinese: 对诗句意境的优美中文描述，融合文学性与视觉美感。
-- english: 专门为图片/视频生成模型设计的纯英文提示词。要求包含：镜头语言（如 Close-up, Slow-motion）、光影描述（如 Cinematic lighting, Golden hour）、艺术风格（如 Traditional Chinese ink wash style, Photorealistic）以及具体的画面细节。`;
+- english: 专门为高清图片/视频生成模型设计的纯英文提示词。要求包含：
+  1. 镜头语言（如 Close-up, Wide shot, Slow-motion, Tracking shot, Aerial view）
+  2. 光影描述（如 Cinematic lighting, Golden hour, Soft rim light, Volumetric fog, Ray tracing）
+  3. 艺术风格（如 Traditional Chinese ink wash style, Photorealistic, 8k resolution, Masterpiece）
+  4. 画质增强词（如 hyper-detailed, sharp focus, ultra-clear, high fidelity, professional photography, award-winning photography）
+  5. 具体画面细节（人物表情、服饰纹理、自然元素、建筑细节）
+  6. 负面提示词不用写，但英文提示词必须保证画面清晰、锐利、高分辨率。
+
+示例英文提示词格式：
+"A wide cinematic shot of [场景描述], [人物/主体描述], [动作/表情], [光影], [风格], hyper-detailed, 8k resolution, sharp focus, cinematic lighting, volumetric fog, award-winning photography, masterpiece"
+
+注意：英文提示词必须足够详细（至少 50 个英文单词），确保 AI 生成高清、锐利、细节丰富的画面，避免模糊或低分辨率效果。`;
 
     let text = '';
 
