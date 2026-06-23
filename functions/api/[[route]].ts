@@ -133,7 +133,9 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
 }
 
 /**
- * Agnes AI 视频生成
+ * Agnes AI 视频生成（异步模式）
+ * Step 1: POST /v1/videos → { id, status: "queued", progress: 0 }
+ * Step 2: GET /v1/videos/{id} → { status, progress, video_url }
  */
 async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
   const response = await fetch(`${AGNES_AI_BASE}/v1/videos`, {
@@ -155,6 +157,27 @@ async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Agnes AI Video error ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Agnes AI 视频状态轮询
+ * GET /v1/videos/{task_id}
+ */
+async function pollAgnesAIVideo(apiKey: string, taskId: string): Promise<any> {
+  const response = await fetch(`${AGNES_AI_BASE}/v1/videos/${encodeURIComponent(taskId)}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Agnes AI Video poll error ${response.status}: ${errorText}`);
   }
 
   return response.json();
@@ -399,9 +422,9 @@ app.post('/generate-prompt', async (c) => {
 });
 
 // ============================================================
-// 6. 视频生成接口 (Agnes AI)
-// 兼容前端轮询模式：如果 Agnes AI 同步返回结果，直接包装成 done:true
-// 注意：Agnes AI 当前有 SSL 证书问题 (525 错误)，视频生成暂时不可用
+// 6. 视频生成接口 (Agnes AI 异步模式)
+// POST /v1/videos → { id, status: "queued", progress: 0 }
+// 前端拿到 id 后调用 poll-video 轮询
 // ============================================================
 app.post('/generate-video', async (c) => {
   try {
@@ -412,8 +435,7 @@ app.post('/generate-video', async (c) => {
     if (!apiKey) {
       return c.json({ 
         error: "视频生成服务暂时不可用", 
-        details: "未配置 Agnes AI API Key",
-        workaround: "视频生成需要 Agnes AI，但当前 SSL 证书有问题。建议联系 Agnes AI 技术支持或稍后重试。"
+        details: "未配置 Agnes AI API Key" 
       }, 503);
     }
 
@@ -424,51 +446,38 @@ app.post('/generate-video', async (c) => {
       if (err.message?.includes('525')) {
         return c.json({ 
           error: "视频生成服务暂时不可用", 
-          details: "Agnes AI 服务端 SSL 证书配置有问题 (error 525)",
-          workaround: "请联系 Agnes AI 技术支持修复 SSL 证书，或稍后重试。"
+          details: "Agnes AI 服务端 SSL 证书配置有问题 (error 525)"
         }, 503);
       }
       throw err;
     }
-    console.log('[Video Gen] Agnes AI raw result:', JSON.stringify(result).slice(0, 500));
+    console.log('[Video Gen] Agnes AI task submitted:', JSON.stringify(result).slice(0, 500));
 
-    // 检查是否同步返回了视频数据（URL 或 base64）
-    const videoUrl =
-      result?.data?.[0]?.url ||
-      result?.data?.[0]?.video_url ||
-      result?.video_url ||
-      result?.url ||
-      result?.output?.url ||
-      result?.output?.video_url ||
-      (typeof result === 'string' ? result : null);
-
-    const videoB64 =
-      result?.data?.[0]?.b64_json ||
-      result?.data?.[0]?.base64 ||
-      result?.base64;
-
-    if (videoUrl || videoB64) {
-      // 同步返回成功，包装成前端期望的格式
-      const wrappedResult = {
-        done: true,
-        response: {
-          generatedVideos: [{ video: { uri: videoUrl || undefined, b64_json: videoB64 || undefined } }]
-        },
-        _raw: result // 保留原始数据供调试
-      };
-      console.log('[Video Gen] Synchronous success, wrapping as done:true');
-      return c.json(wrappedResult);
+    // Agnes AI 异步模式：返回 { id, status, progress, ... }
+    // 前端需要 task_id 来轮询
+    const taskId = result.id || result.task_id;
+    if (!taskId) {
+      // 如果意外同步返回了视频（不太可能但防御）
+      const videoUrl = result?.video_url || result?.data?.[0]?.url;
+      if (videoUrl) {
+        return c.json({
+          done: true,
+          response: {
+            generatedVideos: [{ video: { uri: videoUrl } }]
+          }
+        });
+      }
+      return c.json({ error: "视频任务提交失败：未返回任务 ID", details: JSON.stringify(result) }, 500);
     }
 
-    // 如果返回了 task_id/operation name，按异步模式返回
-    if (result?.task_id || result?.id || result?.name || (typeof result === 'object' && !result.data)) {
-      console.log('[Video Gen] Async mode, returning operation:', JSON.stringify(result).slice(0, 200));
-      return c.json(result);
-    }
-
-    // 无法识别的格式，原样返回并记录
-    console.log('[Video Gen] Unknown format, returning raw:', JSON.stringify(result).slice(0, 300));
-    return c.json(result);
+    // 返回异步任务信息，前端会用这个对象调 poll-video
+    return c.json({
+      done: false,
+      taskId,
+      status: result.status || 'queued',
+      progress: result.progress || 0,
+      _raw: result
+    });
   } catch (error: any) {
     console.error("Generate Video Error:", error);
     return c.json({ error: `视频生成请求失败: ${error.message || '未知错误'}`, details: error.message }, 500);
@@ -476,76 +485,78 @@ app.post('/generate-video', async (c) => {
 });
 
 // ============================================================
-// 7. 视频状态轮询接口 (Agnes AI / 通用)
+// 7. 视频状态轮询接口 (Agnes AI)
+// GET /v1/videos/{task_id} → { status, progress, video_url }
 // ============================================================
 app.post('/poll-video', async (c) => {
   try {
-    const { operation } = await c.req.json();
+    const body = await c.req.json();
+    // 前端传 operation 对象（来自 generate-video 的返回）
+    const operation = body.operation || body;
     if (!operation) return c.json({ error: "缺少 operation 参数" }, 400);
 
     const apiKey = c.env.AGNES_AI_API_KEY;
     if (!apiKey) return c.json({ error: "未配置 Agnes AI API Key" }, 500);
 
-    // 如果传入的 operation 已经是 done:true（同步返回的情况），直接返回
+    // 如果已经是完成状态，直接返回
     if (operation.done === true) {
-      console.log('[Poll Video] Operation already completed, returning as-is');
       return c.json(operation);
     }
 
-    // 尝试提取 task_id 进行异步查询
-    const taskId = typeof operation === 'string'
-      ? operation
-      : (operation?.task_id || operation?.id || operation?.name || null);
-
-    if (taskId) {
-      console.log('[Poll Video] Polling task:', taskId);
-      try {
-        const pollUrl = `${AGNES_AI_BASE}/v1/videos/${encodeURIComponent(taskId)}`;
-        const response = await fetch(pollUrl, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log('[Poll Video] Result:', JSON.stringify(result).slice(0, 300));
-
-          // 检查是否完成
-          const videoUrl = result?.data?.[0]?.url || result?.video_url || result?.url;
-          if (videoUrl || result.status === 'completed' || result.done === true) {
-            return c.json({
-              done: true,
-              response: {
-                generatedVideos: [{ video: { uri: videoUrl } }]
-              }
-            });
-          }
-          // 还在进行中
-          return c.json({ done: false, ...result });
-        } else {
-          // 查询端点可能不存在，返回原始 operation
-          console.warn('[Poll Video] Poll endpoint not available:', response.status);
-        }
-      } catch (pollErr: any) {
-        console.error('[Poll Video] Poll failed:', pollErr.message);
-      }
+    // 从 operation 中提取 task_id
+    const taskId = operation.taskId || operation.task_id || operation.id || operation.name;
+    if (!taskId) {
+      return c.json({ error: "无法提取任务 ID", details: JSON.stringify(operation) }, 400);
     }
 
-    // 无法轮询，直接标记完成并尝试从原始数据中提取 URL
-    console.log('[Poll Video] Cannot poll, checking raw operation for URL');
-    const fallbackUrl =
-      (operation as any)?.response?.generatedVideos?.[0]?.video?.uri ||
-      (operation as any)?.video_url ||
-      (operation as any)?.url;
+    console.log('[Poll Video] Polling task:', taskId);
+    let result;
+    try {
+      result = await pollAgnesAIVideo(apiKey, taskId);
+    } catch (err: any) {
+      // SSL 525 或网络错误，返回重试信号
+      if (err.message?.includes('525')) {
+        return c.json({ done: false, taskId, status: 'in_progress', progress: 0, _retryHint: 'SSL 525, will retry' });
+      }
+      throw err;
+    }
+    console.log('[Poll Video] Result:', JSON.stringify(result).slice(0, 500));
 
-    if (fallbackUrl) {
+    const status = result.status;
+    const progress = result.progress || 0;
+
+    if (status === 'completed') {
+      // 视频生成完成，video_url 可能在 video_url 字段
+      const videoUrl = result.video_url || result.data?.[0]?.url || result.url;
+      if (!videoUrl) {
+        return c.json({ error: "视频已完成但未返回下载链接", details: JSON.stringify(result) }, 500);
+      }
+      console.log('[Poll Video] Video completed, URL:', videoUrl.slice(0, 100));
       return c.json({
         done: true,
-        response: { generatedVideos: [{ video: { uri: fallbackUrl } }] }
+        response: {
+          generatedVideos: [{ video: { uri: videoUrl } }]
+        },
+        _raw: result
       });
     }
 
-    return c.json({ error: "无法获取视频状态" }, 400);
+    if (status === 'failed') {
+      return c.json({
+        done: true,
+        error: { message: result.error || '视频生成失败' },
+        _raw: result
+      });
+    }
+
+    // queued / in_progress → 继续轮询
+    return c.json({
+      done: false,
+      taskId,
+      status,
+      progress,
+      _raw: result
+    });
   } catch (error: any) {
     console.error("Poll Video Error:", error);
     return c.json({ error: `状态查询失败: ${error.message || '未知错误'}`, details: error.message }, 500);

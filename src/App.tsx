@@ -235,62 +235,79 @@ export default function App() {
       console.log('Starting video generation with prompt:', visualPrompt.english);
       let operation = await poeticService.generateVideo(visualPrompt.english) as any;
       console.log('Video generation operation started:', operation);
+
+      // 如果同步就完成了（不太可能但防御）
+      if (operation.done && operation.response) {
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (downloadLink) {
+          setVideoStatus('视频已生成，正在通过安全代理下载...');
+          const dlRes = await fetch(`/api/download-video?url=${encodeURIComponent(downloadLink)}`);
+          if (!dlRes.ok) throw new Error(`视频下载失败: ${dlRes.status}`);
+          const blob = await dlRes.blob();
+          setVideoUrl(URL.createObjectURL(blob));
+          setVideoStatus('生成成功！');
+        }
+        setIsGeneratingVideo(false);
+        return;
+      }
+
+      // 异步模式：轮询
+      const taskId = operation.taskId || operation.task_id || operation.id;
+      if (!taskId) {
+        throw new Error('视频任务提交失败：未返回任务 ID');
+      }
+      setVideoStatus(`视频任务已提交 (ID: ${taskId.slice(0,12)}...)，等待 AI 绘制...`);
       
       const poll = async () => {
         try {
-          console.log('Polling video status for operation:', operation.name || operation);
           const result = await poeticService.pollVideoStatus(operation) as any;
-          console.log('Poll result received:', result);
+          console.log('Poll result:', JSON.stringify(result).slice(0, 300));
           
           if (result.done) {
-            console.log('视频生成任务已完成，完整响应数据:', result);
-            
+            // 检查是否有错误
             if (result.error) {
               throw new Error(`模型生成错误: ${result.error.message || JSON.stringify(result.error)}`);
             }
-            
-            // 更加鲁棒的链接提取逻辑，尝试多种可能的路径（结合用户截图中的 generateVideoResponse.generatedSamples）
+
             const response = result.response;
-            const downloadLink = response?.generatedVideos?.[0]?.video?.uri || 
-                                 response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+            const downloadLink = response?.generatedVideos?.[0]?.video?.uri ||
                                  response?.generatedVideos?.[0]?.uri ||
-                                 response?.generateVideoResponse?.generatedSamples?.[0]?.uri ||
                                  response?.video?.uri ||
-                                 response?.uri ||
-                                 (result as any).video?.uri;
+                                 result.video_url;
 
             if (downloadLink) {
-              console.log('找到视频下载链接:', downloadLink);
+              console.log('找到视频下载链接:', downloadLink.slice(0, 100));
               setVideoStatus('视频已生成，正在通过安全代理下载...');
               
-              const response = await fetch(`/api/download-video?url=${encodeURIComponent(downloadLink)}`);
+              const dlRes = await fetch(`/api/download-video?url=${encodeURIComponent(downloadLink)}`);
               
-              if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Video download failed:', response.status, errorText);
-                throw new Error(`视频下载失败: ${response.status} ${errorText}`);
+              if (!dlRes.ok) {
+                const errorText = await dlRes.text();
+                console.error('Video download failed:', dlRes.status, errorText);
+                throw new Error(`视频下载失败: ${dlRes.status} ${errorText}`);
               }
               
-              const blob = await response.blob();
-              console.log('Video downloaded successfully, blob size:', blob.size);
-              const url = URL.createObjectURL(blob);
-              setVideoUrl(url);
+              const blob = await dlRes.blob();
+              console.log('Video downloaded, blob size:', blob.size);
+              setVideoUrl(URL.createObjectURL(blob));
               setVideoStatus('生成成功！');
             } else {
               throw new Error('未找到视频下载链接');
             }
             setIsGeneratingVideo(false);
           } else {
-            // 检查是否有进度信息
-            const metadata = result.metadata as any;
-            const progress = metadata?.progressPercent || 0;
-            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}%` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
-            setTimeout(poll, 15000); // 15秒轮询一次
+            // 进行中 - 使用 Agnes AI 返回的 progress
+            const progress = result.progress || 0;
+            const status = result.status || 'in_progress';
+            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}% (${status})` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
+            // 更新 operation 对象以便下次轮询
+            if (result.taskId) operation.taskId = result.taskId;
+            setTimeout(poll, 5000); // 5秒轮询
           }
         } catch (e: any) {
           console.error('Poll attempt failed:', e);
           const errorMsg = e.message || '未知错误';
-          if (errorMsg.includes('查询频率过高') || errorMsg.includes('429')) {
+          if (errorMsg.includes('429') || errorMsg.includes('频率')) {
             setVideoStatus('查询频率过高，正在自动重试...');
             setTimeout(poll, 30000); 
           } else {
@@ -305,10 +322,9 @@ export default function App() {
       setIsGeneratingVideo(false);
       if (error.message?.includes('频率过高') || error.message?.includes('429')) {
         setVideoStatus('触发 API 频率限制，请等待倒计时结束后重试。');
-        setCooldown(60); // 开启 60 秒冷却
-      } else if (error.message?.includes('Requested entity was not found')) {
-        setVideoStatus('API Key 校验失败，请检查后端配置。');
-        setHasKey(false);
+        setCooldown(60);
+      } else if (error.message?.includes('525')) {
+        setVideoStatus('视频服务暂时不可用 (SSL 525)，请联系 Agnes AI 技术支持。');
       } else {
         setVideoStatus(`生成失败: ${error.message || '未知错误'}`);
       }
