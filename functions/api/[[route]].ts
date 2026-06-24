@@ -305,7 +305,7 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
       'Authorization': `Bearer ${apiKey}`,
       'X-ModelScope-Async-Mode': 'true',
     },
-    body: JSON.stringify({ model: 'Tongyi-MAI/Z-Image', prompt }),
+    body: JSON.stringify({ model: 'Tongyi-MAI/Z-Image', prompt, size: '1024x1024', n: 1 }),
   });
   if (!submitRes.ok) throw new Error(`ModelScope Image submit error ${submitRes.status}: ${await submitRes.text()}`);
   const { task_id } = await submitRes.json() as any;
@@ -635,7 +635,7 @@ app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
   const { prompt } = await c.req.json();
-  const enhancedPrompt = `A cinematic masterpiece of Chinese traditional painting style. ${prompt}. Ultra-high definition, 4k quality, photorealistic, intricate details, elegant composition, traditional Chinese aesthetic.`;
+  const enhancedPrompt = `${prompt}, high resolution, sharp focus, hyper-realistic details, professional photography, 8K UHD, intricate textures, vivid colors, perfect composition, award-winning masterpiece, traditional Chinese ink painting style, cinematic lighting, ultra-detailed illustration, masterpiece quality`;
 
   // 策略1: Agnes AI (主力，同步返回，体验更好)
   const agnesKey = c.env.AGNES_AI_API_KEY;
