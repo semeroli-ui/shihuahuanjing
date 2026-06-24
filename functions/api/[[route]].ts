@@ -642,7 +642,10 @@ app.post('/generate-image', async (c) => {
   if (agnesKey) {
     try {
       console.log('[Image Gen] Trying Agnes AI...');
-      const result = await callAgnesAIImage(agnesKey, enhancedPrompt);
+      const result = await Promise.race([
+        callAgnesAIImage(agnesKey, enhancedPrompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Agnes AI timeout (30s)')), 30000))
+      ]) as any;
       if (result.b64_json || result.url) {
         console.log('[Image Gen] Agnes AI success');
         return c.json({
@@ -661,7 +664,10 @@ app.post('/generate-image', async (c) => {
   if (msKey) {
     try {
       console.log('[Image Gen] Fallback to ModelScope...');
-      const result = await callModelScopeImage(msKey, enhancedPrompt);
+      const result = await Promise.race([
+        callModelScopeImage(msKey, enhancedPrompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope timeout (60s)')), 60000))
+      ]) as any;
       if (result.url) {
         console.log('[Image Gen] ModelScope success');
         return c.json({ generatedImages: [{ image: { url: result.url } }] });
@@ -671,7 +677,7 @@ app.post('/generate-image', async (c) => {
     }
   }
 
-  return c.json({ error: "所有图片生成服务均不可用" }, 500);
+  return c.json({ error: "所有图片生成服务均不可用。请稍后再试或联系管理员。" }, 500);
 });
 
 // ============================================================
