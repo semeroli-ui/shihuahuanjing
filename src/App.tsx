@@ -242,22 +242,29 @@ export default function App() {
           const result = await poeticService.pollVideoStatus(operation) as any;
           console.log('Poll result received:', result);
           
-          if (result.done) {
+          // 兼容两种响应格式：
+          // 1. OpenAI 格式: { done: true, response: { generatedVideos: [...] } }
+          // 2. Agnes AI 格式: { status: "completed", video_url: "..." }
+          const isDone = result.done === true || result.status === 'completed' || result.status === 'succeeded';
+          const hasError = result.error || (result as any).status === 'failed';
+          
+          if (isDone) {
             console.log('视频生成任务已完成，完整响应数据:', result);
             
-            if (result.error) {
-              throw new Error(`模型生成错误: ${result.error.message || JSON.stringify(result.error)}`);
+            if (hasError) {
+              throw new Error(`模型生成错误: ${result.error?.message || JSON.stringify(result.error) || (result as any).status}`);
             }
             
-            // 更加鲁棒的链接提取逻辑，尝试多种可能的路径（结合用户截图中的 generateVideoResponse.generatedSamples）
+            // 优先提取 Agnes AI 原生 video_url
+            const agnesVideoUrl = (result as any).video_url || result.response?.video_url;
+            // 其次尝试 OpenAI 格式的嵌套路径
             const response = result.response;
-            const downloadLink = response?.generatedVideos?.[0]?.video?.uri || 
-                                 response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
-                                 response?.generatedVideos?.[0]?.uri ||
-                                 response?.generateVideoResponse?.generatedSamples?.[0]?.uri ||
-                                 response?.video?.uri ||
-                                 response?.uri ||
-                                 (result as any).video?.uri;
+            const openAiVideoUrl = response?.generatedVideos?.[0]?.video?.uri || 
+                                   response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+                                   response?.generatedVideos?.[0]?.uri ||
+                                   response?.video?.uri ||
+                                   response?.uri;
+            const downloadLink = agnesVideoUrl || openAiVideoUrl;
 
             if (downloadLink) {
               console.log('找到视频下载链接:', downloadLink);
@@ -277,13 +284,22 @@ export default function App() {
               setVideoUrl(url);
               setVideoStatus('生成成功！');
             } else {
-              throw new Error('未找到视频下载链接');
+              // Agnes AI 返回完成但无 URL（可能 URL 还未准备好）
+              const AgnesError = result.error || (result as any).response?.error;
+              if (AgnesError) {
+                throw new Error(`视频生成失败: ${AgnesError}`);
+              }
+              // 视频已提交但 URL 暂不可用，继续轮询
+              console.warn('视频状态完成但无 URL，继续轮询:', result);
+              setVideoStatus('视频生成完成，链接准备中，继续等待...');
+              setTimeout(poll, 10000); // 10秒后再试
+              return;
             }
             setIsGeneratingVideo(false);
           } else {
-            // 检查是否有进度信息
+            // 支持多种进度字段
             const metadata = result.metadata as any;
-            const progress = metadata?.progressPercent || 0;
+            const progress = metadata?.progressPercent || (result as any).progress || 0;
             setVideoStatus(progress > 0 ? `视频绘制中: ${progress}%` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
             setTimeout(poll, 15000); // 15秒轮询一次
           }

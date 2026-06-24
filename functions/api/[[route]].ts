@@ -507,18 +507,42 @@ app.post('/poll-video', async (c) => {
           const result = await response.json();
           console.log('[Poll Video] Result:', JSON.stringify(result).slice(0, 300));
 
-          // 检查是否完成
-          const videoUrl = result?.data?.[0]?.url || result?.video_url || result?.url;
-          if (videoUrl || result.status === 'completed' || result.done === true) {
+          // 从响应中提取视频 URL（Agnes AI 可能返回多种格式）
+          // 1. OpenAI 兼容格式: { data: [{ url }] }
+          // 2. Agnes AI 格式: { video_url: "..." } 或 { data: [{ video_url: "..." }] }
+          // 3. 通用兜底: { url: "..." }
+          const videoUrl = result?.data?.[0]?.url ||
+                           result?.video_url ||
+                           result?.data?.[0]?.video_url ||
+                           result?.url ||
+                           null;
+
+          // 仅当同时满足：状态完成 AND 拿到 URL，才返回 done: true
+          const isCompleted = result.status === 'completed' || result.status === 'succeeded' || result.done === true;
+          if (isCompleted && videoUrl) {
+            console.log('[Poll Video] Video completed, URL:', videoUrl.slice(0, 80));
             return c.json({
               done: true,
+              video_url: videoUrl,  // 直接返回 video_url 供前端识别
               response: {
                 generatedVideos: [{ video: { uri: videoUrl } }]
               }
             });
           }
+
+          // 任务完成但无 URL → 流式输出格式，通知前端视频不可用
+          if (isCompleted && !videoUrl) {
+            console.error('[Poll Video] Video marked completed but no URL in response:', JSON.stringify(result).slice(0, 200));
+            return c.json({
+              done: true,
+              video_url: null,
+              response: {},
+              error: 'Video completed but URL not available'
+            });
+          }
+
           // 还在进行中
-          return c.json({ done: false, ...result });
+          return c.json({ done: false, status: result.status, progress: result.progress, video_id: result.video_id });
         } else {
           // 查询端点可能不存在，返回原始 operation
           console.warn('[Poll Video] Poll endpoint not available:', response.status);
