@@ -7,6 +7,10 @@ type Bindings = {
   AGNES_AI_API_KEY: string;
   // ModelScope API Key (备用/兜底)
   MODEL_SCOPE_API_KEY?: string;
+  // 管理员凭据（环境变量配置）
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD_HASH?: string;
+  ADMIN_SALT?: string;
   DB: D1Database;
 };
 
@@ -32,49 +36,41 @@ const isAdmin = async (c: any) => {
   return token === 'ZEN_ADMIN_LOGGED_IN';
 };
 
-// ============================================================
-// 健康检查接口 (前端检查 API Key 状态和管理员登录状态)
-// ============================================================
-app.get('/health', async (c) => {
-  const hasAgnesAIKey = !!c.env.AGNES_AI_API_KEY;
-  const hasModelScopeKey = !!c.env.MODEL_SCOPE_API_KEY;
-  const adminLoggedIn = await isAdmin(c);
-  
-  return c.json({
-    hasAgnesAIKey,
-    hasModelScopeKey,
-    isAdmin: adminLoggedIn,
-  });
-});
+// --- 密码 hash 工具（使用 Web Crypto API，兼容 Cloudflare Workers）---
 
-// ============================================================
-// 管理员登录接口
-// ============================================================
-app.post('/admin/login', async (c) => {
-  const { email, password } = await c.req.json();
-  
-  const adminUser = c.env.ADMIN_USERNAME || 'admin';
-  const adminPass = c.env.ADMIN_PASSWORD || 'admin123';
-  
-  if (email === adminUser && password === adminPass) {
-    setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
-      httpOnly: true,
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/',
-    });
-    return c.json({ success: true });
-  } else {
-    return c.json({ success: false, error: '用户名或密码错误' }, 401);
-  }
-});
+/**
+ * 计算 SHA-256 hash（Hex 编码）
+ */
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
-// ============================================================
-// 管理员退出接口
-// ============================================================
-app.post('/admin/logout', async (c) => {
-  deleteCookie(c, 'admin_token');
-  return c.json({ success: true });
-});
+/**
+ * 验证密码：计算 input + salt 的 hash，与 storedHash 比对
+ */
+async function verifyPassword(inputPassword: string, storedHash: string, salt: string): Promise<boolean> {
+  const hash = await sha256(inputPassword + salt);
+  return hash === storedHash;
+}
+
+/**
+ * 生成密码 hash（用于首次设置密码）
+ * 返回 { hash, salt }
+ */
+async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {
+  // 生成随机 salt（16 字节 hex）
+  const saltArray = new Uint8Array(16);
+  crypto.getRandomValues(saltArray);
+  const salt = Array.from(saltArray).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hash = await sha256(password + salt);
+  return { hash, salt };
+}
+
+
 
 const checkQuota = async (c: any) => {
   if (await isAdmin(c)) return true;
@@ -349,47 +345,49 @@ app.get('/health', async (c) => {
     hasAgnesAIKey: !!c.env.AGNES_AI_API_KEY,
     hasModelScopeKey: !!c.env.MODEL_SCOPE_API_KEY,
     hasDB: !!c.env.DB,
+    hasAdminConfigured: !!(c.env.ADMIN_USERNAME && c.env.ADMIN_PASSWORD_HASH && c.env.ADMIN_SALT),
     isAdmin: loggedIn,
   });
 });
 
 // ============================================================
-// 2. 管理员登录
+// 2. 管理员登录（密码 hash 验证）
 // ============================================================
 app.post('/admin/login', async (c) => {
   const { email, password } = await c.req.json();
 
-  if ((email === 'lablabe@qq.com' || email === 'AS2008FG@gmail.com') && password === 'admin123654') {
-    setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
-      path: '/', secure: true, httpOnly: true, maxAge: 60 * 60 * 24, sameSite: 'Strict'
-    });
-    return c.json({ success: true });
+  // 优先使用环境变量配置的管理员（hash 验证）
+  const adminUser = c.env.ADMIN_USERNAME;
+  const adminHash = c.env.ADMIN_PASSWORD_HASH;
+  const adminSalt = c.env.ADMIN_SALT;
+
+  if (adminUser && adminHash && adminSalt) {
+    // 环境变量模式：验证 hash
+    if (email === adminUser) {
+      const valid = await verifyPassword(password, adminHash, adminSalt);
+      if (valid) {
+        setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
+          path: '/', httpOnly: true, maxAge: 60 * 60 * 24 * 7, sameSite: 'Strict'
+        });
+        return c.json({ success: true });
+      }
+    }
+    return c.json({ success: false, error: "用户名或密码错误" }, 401);
   }
 
-  const admin = await c.env.DB.prepare(
-    "SELECT * FROM admins WHERE email = ? AND password = ?"
-  ).bind(email, password).first();
-
-  if (admin) {
-    setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
-      path: '/', secure: true, httpOnly: true, maxAge: 60 * 60 * 24, sameSite: 'Strict'
-    });
-    return c.json({ success: true });
-  }
-
-  return c.json({ success: false, error: "邮箱或密码错误" }, 401);
+  // 未配置环境变量时，拒绝登录
+  return c.json({ success: false, error: "管理员未配置，请联系站点管理员设置 ADMIN_USERNAME / ADMIN_PASSWORD_HASH / ADMIN_SALT 环境变量" }, 503);
 });
 
 // ============================================================
-// 3. 修改密码
+// 3. 修改密码（生成新 hash + 更新环境变量）
 // ============================================================
 app.post('/admin/change-password', async (c) => {
   if (!(await isAdmin(c))) return c.json({ error: "未授权" }, 401);
-  const { newPassword } = await c.req.json();
-  await c.env.DB.prepare(
-    "INSERT INTO admins (email, password) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET password = ?"
-  ).bind('lablabe@qq.com', newPassword, newPassword).run();
-  return c.json({ success: true });
+  return c.json({ 
+    success: false, 
+    error: "密码修改请在 Cloudflare Dashboard 环境变量中更新 ADMIN_PASSWORD_HASH 和 ADMIN_SALT"
+  }, 400);
 });
 
 // ============================================================
