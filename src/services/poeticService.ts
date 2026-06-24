@@ -70,44 +70,14 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 5. 调用图像生成模型 (走 Worker 代理，绕过 Agnes AI SSL 525)
+  // 5. 调用图像生成模型 (走后端代理，有 fallback 逻辑)
   async generateImage(prompt: string) {
-    // 优先走 Worker 代理（绕过 SSL 525）
-    try {
-      const res = await fetch(`${this.WORKER_PROXY_URL}/v1/images/generations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, n: 1, size: '1024x1024' })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // 转换为统一格式
-        const imgData = data.data?.[0];
-        if (imgData?.url || imgData?.b64_json) {
-          return {
-            generatedImages: [{
-              image: imgData.url 
-                ? { url: imgData.url } 
-                : { imageBytes: imgData.b64_json }
-            }]
-          };
-        }
-      }
-      console.warn('[Image] Worker failed, fallback to backend');
-    } catch (e) {
-      console.warn('[Image] Worker error, fallback to backend:', e);
-    }
-
-    // Fallback: 走后端（有 Agnes AI -> ModelScope fallback）
     const res = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: '图像生成失败' }));
-      throw new Error(err.error || err.details || '图像生成失败');
-    }
+    if (!res.ok) throw new Error("图像生成失败");
     return await res.json();
   }
 
