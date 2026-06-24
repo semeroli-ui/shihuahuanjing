@@ -4,8 +4,8 @@ export interface PoeticPrompt {
 }
 
 export class PoeticService {
-  // Worker 代理地址（部署后替换为实际 Worker URL）
-  private readonly WORKER_PROXY_URL = 'https://agnes-ai-proxy.your-subdomain.workers.dev';
+  // Worker 代理地址（仅用于视频生成，绕过 SSL 525）
+  private readonly WORKER_PROXY_URL = 'https://agnes-ai-proxy.qianmo268.workers.dev';
 
   // 1. 将诗词转化为提示词 (调用后端代理 - 需要配额检查)
   async generatePrompt(poem: string): Promise<PoeticPrompt> {
@@ -70,9 +70,9 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 5. 调用图像生成模型 (走 Worker 代理，绕过 SSL 525)
+  // 5. 调用图像生成模型 (走后端代理，有 fallback 逻辑)
   async generateImage(prompt: string) {
-    const res = await fetch(`${this.WORKER_PROXY_URL}/v1/images/generations`, {
+    const res = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
