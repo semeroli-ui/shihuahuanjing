@@ -166,7 +166,68 @@ export default {
       }
 
       // ============================================================
-      // 3. GET /agnesapi?video_id=... - 专用轮询端点（直接访问）
+      // 3. GET /download?url=... - 视频/文件下载代理（绕过 storage.googleapis.com 封锁）
+      // ============================================================
+      if (request.method === 'GET' && url.pathname === '/download') {
+        const fileUrl = url.searchParams.get('url');
+        if (!fileUrl) {
+          return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+
+        console.log('[Worker] Proxying download:', fileUrl.slice(0, 100));
+
+        try {
+          const downloadResponse = await fetch(fileUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'video/mp4,video/*,*/*',
+              'User-Agent': '诗画幻境/1.0 Video Downloader',
+            },
+          });
+
+          if (!downloadResponse.ok) {
+            console.error('[Worker] Download failed:', downloadResponse.status);
+            return new Response(JSON.stringify({ 
+              error: 'Download failed', 
+              status: downloadResponse.status,
+              url: fileUrl 
+            }), {
+              status: 502,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            });
+          }
+
+          // 流式转发，保持 Content-Type 和 Content-Length
+          const contentType = downloadResponse.headers.get('Content-Type') || 'video/mp4';
+          const contentLength = downloadResponse.headers.get('Content-Length');
+          
+          const responseHeaders = {
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': origin || '*',
+            'Content-Disposition': 'attachment; filename="video.mp4"',
+            'Cache-Control': 'no-store',
+          };
+          if (contentLength) responseHeaders['Content-Length'] = contentLength;
+
+          console.log('[Worker] Download OK, size:', contentLength || 'streaming');
+          return new Response(downloadResponse.body, {
+            status: downloadResponse.status,
+            headers: responseHeaders,
+          });
+        } catch (err) {
+          console.error('[Worker] Download error:', err.message);
+          return new Response(JSON.stringify({ error: err.message, url: fileUrl }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+      }
+
+      // ============================================================
+      // 4. GET /agnesapi?video_id=... - 专用轮询端点（直接访问）
       // ============================================================
       if (request.method === 'GET' && url.pathname === '/agnesapi') {
         const videoId = url.searchParams.get('video_id');
@@ -196,7 +257,7 @@ export default {
         });
       }
 
-      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, GET /v1/videos/{id}, GET /agnesapi?video_id=...' }), {
+      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, GET /v1/videos/{id}, GET /agnesapi?video_id=..., GET /download?url=...' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });

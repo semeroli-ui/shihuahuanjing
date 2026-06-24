@@ -311,21 +311,25 @@ export default function App() {
           if (status === 'completed' || status === 'succeeded') {
             if (videoUrl) {
               console.log('找到视频下载链接:', videoUrl.slice(0, 100));
-              setVideoStatus('视频已生成，正在下载...');
+              setVideoStatus('视频已生成，正在通过代理下载...');
               
-              // 视频 URL 是 storage.googleapis.com，国内被墙
-              // 尝试直接 fetch，失败则提示用户
+              // 走 Worker 代理下载，绕过 storage.googleapis.com 封锁
               try {
-                const dlRes = await fetch(videoUrl);
-                if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
+                const workerDownloadUrl = `${poeticService.WORKER_PROXY_URL}/download?url=${encodeURIComponent(videoUrl)}`;
+                const dlRes = await fetch(workerDownloadUrl);
                 
+                if (!dlRes.ok) {
+                  throw new Error(`代理下载失败: HTTP ${dlRes.status}`);
+                }
+                
+                const contentType = dlRes.headers.get('Content-Type') || 'video/mp4';
                 const blob = await dlRes.blob();
-                console.log('Video downloaded, blob size:', blob.size);
+                console.log('Video downloaded via Worker, blob size:', blob.size, 'type:', contentType);
                 setVideoUrl(URL.createObjectURL(blob));
                 setVideoStatus('生成成功！');
               } catch (dlErr: any) {
-                console.error('Direct download failed:', dlErr);
-                // 提供视频链接让用户自行下载
+                console.error('Worker proxy download failed:', dlErr);
+                // Worker 代理也失败 → fallback：显示原始链接让用户自行下载
                 setVideoUrl(videoUrl);
                 setVideoStatus('视频已生成（点击链接下载）');
               }
