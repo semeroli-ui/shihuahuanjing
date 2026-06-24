@@ -227,6 +227,85 @@ export default {
       }
 
       // ============================================================
+      // 5. POST /tts - 语音合成（TTS）
+      // 策略1: Agnes AI TTS（主力）
+      // 策略2: Edge TTS 公共代理（兜底，无需 API Key）
+      // ============================================================
+      if (request.method === 'POST' && url.pathname === '/tts') {
+        const body = await request.json().catch(() => ({}));
+        const { text, voice } = body;
+
+        if (!text) {
+          return new Response(JSON.stringify({ error: 'Missing text parameter' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+
+        console.log('[Worker] TTS request:', { text: text.slice(0, 50), voice });
+
+        // 策略1: 尝试 Agnes AI TTS
+        if (apiKey) {
+          try {
+            const ttsRes = await fetch(`${AGNES_AI_BASE}/v1/audio/speech`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'agnes-ai-tts',
+                input: text,
+                voice: voice || 'alloy',
+                response_format: 'mp3',
+              }),
+            });
+
+            if (ttsRes.ok) {
+              const arrayBuffer = await ttsRes.arrayBuffer();
+              const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+              console.log('[Worker] Agnes AI TTS success, size:', arrayBuffer.byteLength);
+              return new Response(JSON.stringify({ base64Audio, source: 'agnes' }), {
+                headers: { 'Content-Type': 'application/json', ...corsHeaders },
+              });
+            } else {
+              console.warn('[Worker] Agnes AI TTS failed:', ttsRes.status);
+            }
+          } catch (err) {
+            console.warn('[Worker] Agnes AI TTS error:', err.message);
+          }
+        }
+
+        // 策略2: Edge TTS 公共代理（兜底，无需 API Key）
+        try {
+          const edgeVoice = voice || 'zh-CN-XiaoxiaoNeural';
+          const edgeUrl = `https://edge-tts.shuyi.top/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(edgeVoice)}`;
+          
+          const edgeRes = await fetch(edgeUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'audio/mpeg,application/octet-stream,*/*' },
+          });
+
+          if (edgeRes.ok) {
+            const arrayBuffer = await edgeRes.arrayBuffer();
+            const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+            console.log('[Worker] Edge TTS success, size:', arrayBuffer.byteLength);
+            return new Response(JSON.stringify({ base64Audio, source: 'edge' }), {
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            });
+          }
+          console.warn('[Worker] Edge TTS failed:', edgeRes.status);
+        } catch (err) {
+          console.warn('[Worker] Edge TTS error:', err.message);
+        }
+
+        return new Response(JSON.stringify({ error: '所有 TTS 服务均不可用' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // ============================================================
       // 4. GET /agnesapi?video_id=... - 专用轮询端点（直接访问）
       // ============================================================
       if (request.method === 'GET' && url.pathname === '/agnesapi') {
@@ -257,7 +336,7 @@ export default {
         });
       }
 
-      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, GET /v1/videos/{id}, GET /agnesapi?video_id=..., GET /download?url=...' }), {
+      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, GET /v1/videos/{id}, GET /agnesapi?video_id=..., GET /download?url=..., POST /tts' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });

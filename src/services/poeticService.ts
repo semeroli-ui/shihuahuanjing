@@ -81,39 +81,44 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 6. 诗词吟诵 (后端 TTS -> 浏览器兜底)
+  // 6. 诗词吟诵 (Worker TTS → 浏览器兜底)
+  // 优先走 Worker（Agnes AI TTS 或 Edge TTS），无需担心 SSL 问题
   async generateSpeech(text: string): Promise<{ type: 'url' | 'browser'; url?: string; text?: string }> {
-    // 先尝试后端 TTS
     try {
-      const res = await fetch('/api/generate-speech', {
+      const res = await fetch(`${this.WORKER_PROXY_URL}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text, voice: 'zh-CN-XiaoxiaoNeural' }),
       });
-      
+
       const data = await res.json().catch(() => ({})) as any;
-      if (!res.ok) {
-        // 构建完整的错误信息
-        let errorMsg = data.error || "吟诵生成失败";
-        if (data.details) errorMsg += `\n${data.details}`;
-        if (data.workaround) errorMsg += `\n${data.workaround}`;
-        throw new Error(errorMsg);
-      }
       
-      const { base64Audio } = data as { base64Audio?: string };
-      if (base64Audio) {
-        const pcmData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
-        const wavData = this.encodeWAV(pcmData, 24000);
-        const blob = new Blob([wavData], { type: 'audio/wav' });
-        return { type: 'url', url: URL.createObjectURL(blob) };
+      if (res.ok && data.base64Audio) {
+        // 尝试 WAV 编码（部分来源是 MP3）
+        const source = data.source || 'unknown';
+        if (source === 'edge') {
+          // Edge TTS 返回 MP3，需要正确解码
+          const binary = atob(data.base64Audio);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          return { type: 'url', url: URL.createObjectURL(blob) };
+        } else {
+          // Agnes AI / 默认：WAV 格式
+          const pcmData = Uint8Array.from(atob(data.base64Audio), c => c.charCodeAt(0));
+          const wavData = this.encodeWAV(pcmData, 24000);
+          const blob = new Blob([wavData], { type: 'audio/wav' });
+          return { type: 'url', url: URL.createObjectURL(blob) };
+        }
       }
-      throw new Error("未生成音频数据");
-    } catch {
-      // 后端失败，尝试浏览器 TTS
+
+      throw new Error(data.error || `TTS 请求失败: HTTP ${res.status}`);
+    } catch (err: any) {
+      // Worker TTS 失败 → 浏览器语音兜底（可播放但无法下载）
       if ('speechSynthesis' in window) {
         return { type: 'browser', text };
       }
-      throw new Error("无可用的语音合成服务");
+      throw new Error(`吟诵生成失败: ${err.message}`);
     }
   }
 
