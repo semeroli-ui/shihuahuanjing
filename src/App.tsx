@@ -207,21 +207,40 @@ export default function App() {
     setImageStatus('正在绘制 4K 诗意原画...');
     try {
       const response = await poeticService.generateImage(visualPrompt.english) as any;
-      // Agnes AI OpenAI 格式: { data: [{ url, b64_json }] }
-      const imageData = response.data?.[0];
-      if (imageData?.url) {
-        setGeneratedImage(imageData.url);
+      console.log('[Image] Response:', JSON.stringify(response).slice(0, 300));
+      
+      // 尝试多种格式：
+      // 1. Agnes AI 格式: { data: [{ url, b64_json }] }
+      // 2. ModelScope 格式: { generatedImages: [{ image: { url } }] }
+      // 3. 直接 URL: { url: '...' }
+      // 4. 直接 base64: { b64_json: '...' }
+      
+      let imageUrl = '';
+      
+      // 格式 1: Agnes AI { data: [...] }
+      const data1 = response.data?.[0];
+      if (data1?.url) imageUrl = data1.url;
+      else if (data1?.b64_json) imageUrl = `data:image/png;base64,${data1.b64_json}`;
+      
+      // 格式 2: ModelScope { generatedImages: [...] }
+      if (!imageUrl) {
+        const data2 = response.generatedImages?.[0];
+        if (data2?.image?.url) imageUrl = data2.image.url;
+        else if (data2?.url) imageUrl = data2.url;
+        else if (data2?.image?.b64_json) imageUrl = `data:image/png;base64,${data2.image.b64_json}`;
+      }
+      
+      // 格式 3 & 4: 直接值
+      if (!imageUrl) {
+        if (response.url) imageUrl = response.url;
+        else if (response.b64_json) imageUrl = `data:image/png;base64,${response.b64_json}`;
+      }
+      
+      if (imageUrl) {
+        setGeneratedImage(imageUrl);
         setImageStatus('原画绘制成功！');
-      } else if (imageData?.b64_json) {
-        setGeneratedImage(`data:image/png;base64,${imageData.b64_json}`);
-        setImageStatus('原画绘制成功！');
-      } else if (response.url) {
-        // 直接返回 URL 的情况
-        setGeneratedImage(response.url);
-        setImageStatus('原画绘制成功！');
-      } else if (response.b64_json) {
-        setGeneratedImage(`data:image/png;base64,${response.b64_json}`);
-        setImageStatus('原画绘制成功！');
+      } else {
+        setImageStatus(`原画绘制失败: 未识别的响应格式`);
       }
     } catch (error: any) {
       console.error('Image generation error:', error);
