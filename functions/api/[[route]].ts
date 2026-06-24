@@ -150,8 +150,8 @@ async function callAgnesAIChat(apiKey: string, userPrompt: string, systemPrompt?
  * 自动追加质量增强后缀，防止模糊
  */
 async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
-  // 质量增强后缀：确保高清、锐利、细节丰富
-  const qualitySuffix = ', hyper-detailed, sharp focus, 8k resolution, ultra-clear, high fidelity, professional photography, award-winning photography, masterpiece, best quality';
+  // 水墨丹青质量增强后缀
+  const qualitySuffix = ', ancient Chinese ink wash painting on xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality';
   const enhancedPrompt = prompt + qualitySuffix;
 
   const response = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
@@ -415,23 +415,23 @@ app.post('/generate-prompt', async (c) => {
       poemLength: poem?.length,
     });
 
-    const systemInstruction = `你是一位集"中国古典诗词研究专家"、"美学视觉专家"与"奥斯卡金像奖导演"于一身的跨界大师。
-你的任务是将用户提供的诗词，深度解析其意境、色彩、构图与情感，并转化为极其专业的电影分镜脚本与高清艺术提示词。
+    const systemInstruction = `你是一位精通"中国古典诗词"与"水墨丹青艺术"的大师。
+你的任务是将用户提供的诗词，深度解析其意境与情感，转化为专为【水墨丹青国风意境画】设计的英文提示词。
 
 输出必须为严格的 JSON 格式：{"chinese": "...", "english": "..."}
-- chinese: 对诗句意境的优美中文描述，融合文学性与视觉美感。
-- english: 专门为高清图片/视频生成模型设计的纯英文提示词。要求包含：
-  1. 镜头语言（如 Close-up, Wide shot, Slow-motion, Tracking shot, Aerial view）
-  2. 光影描述（如 Cinematic lighting, Golden hour, Soft rim light, Volumetric fog, Ray tracing）
-  3. 艺术风格（如 Traditional Chinese ink wash style, Photorealistic, 8k resolution, Masterpiece）
-  4. 画质增强词（如 hyper-detailed, sharp focus, ultra-clear, high fidelity, professional photography, award-winning photography）
-  5. 具体画面细节（人物表情、服饰纹理、自然元素、建筑细节）
-  6. 负面提示词不用写，但英文提示词必须保证画面清晰、锐利、高分辨率。
+- chinese: 对诗句意境的优美中文描述，2-3句，文学性强。
+- english: 专门用于图片生成的水墨丹青风格英文提示词。要求：
+  1. 核心风格：水墨画 (Chinese ink wash painting)、宣纸/绢本质感、工笔与写意结合
+  2. 画面元素：留白 (negative space)、墨色浓淡 (thick/thin ink gradients)、飞白 (dry brush strokes)、晕染 (ink wash blending)
+  3. 色彩：水墨为主（焦浓重淡清五色），可点缀朱红 (vermilion red)、石青 (azurite blue)、石绿 (malachite green) 等矿物色
+  4. 构图：中国传统散点透视或深远构图，山水、人物、花鸟、楼阁均可
+  5. 氛围：诗情画意、禅意悠远、古典雅致
+  6. 画质增强词：ancient Chinese painting on rice paper, handscroll format, museum-quality brushwork, traditional Chinese pigments, xuan paper texture, delicate and refined, masterpiece
 
 示例英文提示词格式：
-"A wide cinematic shot of [场景描述], [人物/主体描述], [动作/表情], [光影], [风格], hyper-detailed, 8k resolution, sharp focus, cinematic lighting, volumetric fog, award-winning photography, masterpiece"
+"A serene Chinese ink wash painting of [场景], with traditional brushstrokes on aged xuan paper, wet ink gradients and dry brush textures, subtle washes of ink varying from deep black to pale grey, touches of azurite blue and malachite green, elegant composition with generous white space, poetic and meditative atmosphere, handscroll format, museum-quality, masterpiece"
 
-注意：英文提示词必须足够详细（至少 50 个英文单词），确保 AI 生成高清、锐利、细节丰富的画面，避免模糊或低分辨率效果。`;
+注意：英文提示词必须足够详细（至少 60 个英文单词），以水墨丹青为核心风格，绝不出现 photographic/photorealistic/cinematic lighting/8k/DSLR/focus puller 等西方摄影词汇。`;
 
     let text = '';
 
@@ -647,7 +647,7 @@ app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
   const { prompt } = await c.req.json();
-  const enhancedPrompt = `${prompt}, high resolution, sharp focus, hyper-realistic details, professional photography, 8K UHD, intricate textures, vivid colors, perfect composition, award-winning masterpiece, traditional Chinese ink painting style, cinematic lighting, ultra-detailed illustration, masterpiece quality`;
+  const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality`;
 
   // 策略1: Agnes AI (主力，同步返回，体验更好)
   const agnesKey = c.env.AGNES_AI_API_KEY;
