@@ -283,10 +283,20 @@ export default function App() {
       }
       setVideoStatus(`视频任务已提交 (ID: ${taskId.slice(0,12)}...)，等待 AI 绘制...`);
       
+      let pollCount = 0;
+      const MAX_POLL_COUNT = 30; // 最多轮询 30 次（约 5 分钟），防止无限轮询
+
       const poll = async () => {
+        pollCount++;
+        if (pollCount > MAX_POLL_COUNT) {
+          setVideoStatus('视频生成超时，请刷新重试');
+          setIsGeneratingVideo(false);
+          return;
+        }
+
         try {
           const result = await poeticService.pollVideoStatus(taskId) as any;
-          console.log('Poll result:', JSON.stringify(result).slice(0, 300));
+          console.log(`[Poll #${pollCount}]`, JSON.stringify(result).slice(0, 300));
           
           // Agnes AI / OpenAI 兼容提取
           const status = result.status || result.state || (result.done ? 'completed' : 'in_progress');
@@ -325,8 +335,8 @@ export default function App() {
                 throw new Error(`视频生成失败: ${AgnesError}`);
               }
               console.warn('视频状态完成但无 URL，继续轮询:', result);
-              setVideoStatus('视频生成完成，链接准备中，继续等待...');
-              setTimeout(poll, 10000);
+              setVideoStatus(`视频生成完成，链接准备中 (${pollCount}/${MAX_POLL_COUNT})...`);
+              setTimeout(poll, 15000); // 15 秒间隔，稍长一些
               return;
             }
             setIsGeneratingVideo(false);
@@ -334,8 +344,10 @@ export default function App() {
             throw new Error(`视频生成失败: ${result.error?.message || result.message || '未知错误'}`);
           } else {
             // 进行中，显示进度
-            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}% (${status})` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
-            setTimeout(poll, 10000); // 10秒轮询
+            setVideoStatus(progress > 0 
+              ? `视频绘制中: ${progress}% (${pollCount}/${MAX_POLL_COUNT})` 
+              : `视频绘制中，请稍候... (${pollCount}/${MAX_POLL_COUNT})`);
+            setTimeout(poll, 15000); // 15 秒间隔
           }
         } catch (e: any) {
           console.error('Poll attempt failed:', e);
