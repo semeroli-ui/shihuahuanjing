@@ -207,14 +207,20 @@ export default function App() {
     setImageStatus('正在绘制 4K 诗意原画...');
     try {
       const response = await poeticService.generateImage(visualPrompt.english) as any;
-      if (response.generatedImages?.[0]?.image?.url) {
-        // URL 格式 (ModelScope)
-        setGeneratedImage(response.generatedImages[0].image.url);
+      // Agnes AI OpenAI 格式: { data: [{ url, b64_json }] }
+      const imageData = response.data?.[0];
+      if (imageData?.url) {
+        setGeneratedImage(imageData.url);
         setImageStatus('原画绘制成功！');
-      } else if (response.generatedImages?.[0]?.image?.imageBytes) {
-        // Base64 格式 (Agnes AI)
-        const base64Image = response.generatedImages[0].image.imageBytes;
-        setGeneratedImage(`data:image/png;base64,${base64Image}`);
+      } else if (imageData?.b64_json) {
+        setGeneratedImage(`data:image/png;base64,${imageData.b64_json}`);
+        setImageStatus('原画绘制成功！');
+      } else if (response.url) {
+        // 直接返回 URL 的情况
+        setGeneratedImage(response.url);
+        setImageStatus('原画绘制成功！');
+      } else if (response.b64_json) {
+        setGeneratedImage(`data:image/png;base64,${response.b64_json}`);
         setImageStatus('原画绘制成功！');
       }
     } catch (error: any) {
@@ -260,48 +266,44 @@ export default function App() {
       
       const poll = async () => {
         try {
-          const result = await poeticService.pollVideoStatus(operation) as any;
+          const result = await poeticService.pollVideoStatus(taskId) as any;
           console.log('Poll result:', JSON.stringify(result).slice(0, 300));
           
-          if (result.done) {
-            // 检查是否有错误
-            if (result.error) {
-              throw new Error(`模型生成错误: ${result.error.message || JSON.stringify(result.error)}`);
-            }
+          // Agnes AI 原生返回格式: { status, progress, video_url }
+          const status = result.status || result.state || 'in_progress';
+          const progress = result.progress || 0;
+          const videoUrl = result.video_url;
 
-            const response = result.response;
-            const downloadLink = response?.generatedVideos?.[0]?.video?.uri ||
-                                 response?.generatedVideos?.[0]?.uri ||
-                                 response?.video?.uri ||
-                                 result.video_url;
-
-            if (downloadLink) {
-              console.log('找到视频下载链接:', downloadLink.slice(0, 100));
-              setVideoStatus('视频已生成，正在通过安全代理下载...');
+          if (status === 'completed' || status === 'succeeded') {
+            if (videoUrl) {
+              console.log('找到视频下载链接:', videoUrl.slice(0, 100));
+              setVideoStatus('视频已生成，正在下载...');
               
-              const dlRes = await fetch(`/api/download-video?url=${encodeURIComponent(downloadLink)}`);
-              
-              if (!dlRes.ok) {
-                const errorText = await dlRes.text();
-                console.error('Video download failed:', dlRes.status, errorText);
-                throw new Error(`视频下载失败: ${dlRes.status} ${errorText}`);
+              // 视频 URL 是 storage.googleapis.com，国内被墙
+              // 尝试直接 fetch，失败则提示用户
+              try {
+                const dlRes = await fetch(videoUrl);
+                if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
+                
+                const blob = await dlRes.blob();
+                console.log('Video downloaded, blob size:', blob.size);
+                setVideoUrl(URL.createObjectURL(blob));
+                setVideoStatus('生成成功！');
+              } catch (dlErr: any) {
+                console.error('Direct download failed:', dlErr);
+                // 提供视频链接让用户自行下载
+                setVideoUrl(videoUrl);
+                setVideoStatus('视频已生成（点击链接下载）');
               }
-              
-              const blob = await dlRes.blob();
-              console.log('Video downloaded, blob size:', blob.size);
-              setVideoUrl(URL.createObjectURL(blob));
-              setVideoStatus('生成成功！');
             } else {
-              throw new Error('未找到视频下载链接');
+              throw new Error('视频生成完成但未返回下载链接');
             }
             setIsGeneratingVideo(false);
+          } else if (status === 'failed' || status === 'error') {
+            throw new Error(`视频生成失败: ${result.error?.message || result.message || '未知错误'}`);
           } else {
-            // 进行中 - 使用 Agnes AI 返回的 progress
-            const progress = result.progress || 0;
-            const status = result.status || 'in_progress';
+            // 进行中
             setVideoStatus(progress > 0 ? `视频绘制中: ${progress}% (${status})` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
-            // 更新 operation 对象以便下次轮询
-            if (result.taskId) operation.taskId = result.taskId;
             setTimeout(poll, 5000); // 5秒轮询
           }
         } catch (e: any) {
