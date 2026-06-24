@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -46,6 +46,7 @@ export default function App() {
   const [browserAudioText, setBrowserAudioText] = useState<string | null>(null);
   const [imageStatus, setImageStatus] = useState('');
   const [videoStatus, setVideoStatus] = useState('');
+  const [videoProgress, setVideoProgress] = useState(0);
   const [audioStatus, setAudioStatus] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -255,6 +256,7 @@ export default function App() {
     setIsGeneratingVideo(true);
     setVideoUrl(null);
     setVideoStatus('正在唤醒 Agnes AI 视频模型，生成意境画卷...');
+    setVideoProgress(0);
     
     try {
       console.log('Starting video generation with prompt:', visualPrompt.english);
@@ -349,6 +351,7 @@ export default function App() {
             throw new Error(`视频生成失败: ${result.error?.message || result.message || '未知错误'}`);
           } else {
             // 进行中，显示进度
+            setVideoProgress(progress);
             setVideoStatus(progress > 0 
               ? `视频绘制中: ${progress}% (${pollCount}/${MAX_POLL_COUNT})` 
               : `视频绘制中，请稍候... (${pollCount}/${MAX_POLL_COUNT})`);
@@ -453,7 +456,7 @@ export default function App() {
   return (
     <div className="min-h-screen paper-texture selection:bg-zen-vermilion/10 text-zen-ink">
       {/* Header */}
-      <header className="py-12 px-12 flex justify-between items-start relative">
+      <header className="py-12 px-4 md:px-12 flex justify-between items-start relative">
         <div className="flex items-start gap-8">
           {/* 2x2 方格标题 */}
           <div className="flex flex-col items-center">
@@ -540,7 +543,7 @@ export default function App() {
                 ) : (
                   library.map(item => (
                     <div key={item.id} className="p-6 bg-white/40 border border-zen-ink/5 rounded-3xl group hover:border-zen-vermilion/20 transition-all">
-                      <p className="serif-text text-lg mb-4 leading-relaxed line-clamp-3">{item.poem}</p>
+                      <p className="serif-text text-lg mb-4 leading-relaxed line-clamp-4">{item.poem}</p>
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] text-zen-ink/30">{item.date}</span>
                         <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -559,7 +562,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="max-w-7xl mx-auto py-8 px-12 grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
+      <main className="max-w-7xl mx-auto py-8 px-4 md:px-12 grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-16 items-start">
         {/* Left Column: Input & Analysis (4 cols) */}
         <div className="lg:col-span-4 space-y-12">
           <section className="relative">
@@ -685,7 +688,7 @@ export default function App() {
                   <div className="p-6 bg-zen-ink text-zen-paper/80 shadow-inner relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 -mr-12 -mt-12 rounded-full"></div>
                     <p className="text-[9px] uppercase tracking-widest text-white/40 mb-3 font-bold">Visual Prompt</p>
-                    <p className="text-xs italic leading-relaxed font-mono opacity-60">
+                    <p className="text-sm italic leading-relaxed font-mono opacity-80">
                       {visualPrompt.english}
                     </p>
                   </div>
@@ -849,6 +852,14 @@ export default function App() {
                       <p className="text-zen-ink/40 font-serif tracking-[0.2em] animate-pulse">
                         {videoStatus || '正在唤醒 AI 绘制画卷...'}
                       </p>
+                      {videoProgress > 0 && (
+                        <div className="w-48 h-1 bg-zen-ink/10 rounded-full mt-4 overflow-hidden">
+                          <div 
+                            className="h-full bg-zen-vermilion transition-all duration-500"
+                            style={{ width: `${videoProgress}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -865,7 +876,7 @@ export default function App() {
         </div>
         <div className="text-center space-y-2">
           {!isAdmin && (
-            <p className="text-zen-accent text-[10px] tracking-widest uppercase mb-4">
+            <p className="text-zen-vermilion/60 text-[10px] tracking-widest uppercase mb-4">
               访客模式：每日限 3 次生成 · 剩余额度请见操作反馈
             </p>
           )}
@@ -1018,6 +1029,19 @@ export default function App() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+      {/* Status Message Toast */}
+      <AnimatePresence>
+        {statusMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[90] px-6 py-3 bg-zen-ink text-zen-paper text-sm font-serif tracking-widest rounded-full shadow-2xl border border-zen-vermilion/20"
+          >
+            {statusMessage}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

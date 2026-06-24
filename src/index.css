@@ -2,10 +2,10 @@
 
 @theme {
   --font-serif: "Noto Serif SC", "Playfair Display", serif;
-  --color-zen-ink: #1a1a1a;
-  --color-zen-paper: #f5f2ed;
+  --color-zen-ink: #2d2417;
+  --color-zen-paper: #f4efe5;
   --color-zen-accent: #5a5a40;
-  --color-zen-vermilion: #b22222;
+  --color-zen-vermilion: #c9302c;
   --color-zen-celadon: #708d81;
   --color-zen-indigo: #2e4053;
 }
