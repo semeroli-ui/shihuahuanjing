@@ -1,0 +1,7 @@
+name = "agnes-ai-proxy"
+main = "agnes-proxy.js"
+compatibility_date = "2024-06-01"
+
+# 环境变量（部署时设置）
+[vars]
+# AGNES_AI_API_KEY 需要在 Cloudflare Dashboard 设置

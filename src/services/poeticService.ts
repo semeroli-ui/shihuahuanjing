@@ -4,7 +4,10 @@ export interface PoeticPrompt {
 }
 
 export class PoeticService {
-  // 1. 将诗词转化为提示词 (调用后端代理)
+  // Worker 代理地址（仅用于视频生成，绕过 SSL 525）
+  private readonly WORKER_PROXY_URL = 'https://agnes-ai-proxy.qianmo268.workers.dev';
+
+  // 1. 将诗词转化为提示词 (调用后端代理 - 需要配额检查)
   async generatePrompt(poem: string): Promise<PoeticPrompt> {
     const res = await fetch('/api/generate-prompt', {
       method: 'POST',
@@ -18,30 +21,23 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 2. 调用视频生成 (调用后端代理)
+  // 2. 调用视频生成 (走 Worker 代理，绕过 SSL 525)
   async generateVideo(prompt: string) {
-    const res = await fetch('/api/generate-video', {
+    const res = await fetch(`${this.WORKER_PROXY_URL}/v1/videos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({})) as any;
-      let errorMsg = errorData.error || "后端生成请求失败";
-      if (errorData.details) errorMsg += `\n详情: ${errorData.details}`;
-      if (errorData.workaround) errorMsg += `\n建议: ${errorData.workaround}`;
-      throw new Error(errorMsg);
+      throw new Error(errorData.error || "视频生成请求失败");
     }
     return await res.json();
   }
 
-  // 3. 轮询视频状态 (调用后端代理)
-  async pollVideoStatus(operation: any) {
-    const res = await fetch('/api/poll-video', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operation })
-    });
+  // 3. 轮询视频状态 (走 Worker 代理)
+  async pollVideoStatus(taskId: string) {
+    const res = await fetch(`${this.WORKER_PROXY_URL}/v1/videos/${taskId}`);
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({})) as any;
       throw new Error(errorData.error || "状态查询失败");
@@ -74,7 +70,7 @@ export class PoeticService {
     return await res.json();
   }
 
-  // 5. 调用图像生成模型 (调用后端代理)
+  // 5. 调用图像生成模型 (走后端代理，有 fallback 逻辑)
   async generateImage(prompt: string) {
     const res = await fetch('/api/generate-image', {
       method: 'POST',

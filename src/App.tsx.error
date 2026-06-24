@@ -288,14 +288,36 @@ export default function App() {
           const result = await poeticService.pollVideoStatus(taskId) as any;
           console.log('Poll result:', JSON.stringify(result).slice(0, 300));
           
-          // Agnes AI / OpenAI 兼容提取
-          const status = result.status || result.state || (result.done ? 'completed' : 'in_progress');
-          const progress = result.progress || (result as any).metadata?.progressPercent || 0;
-          const videoUrl = (result as any).video_url ||
-                           result.response?.generatedVideos?.[0]?.video?.uri ||
-                           result.response?.generatedVideos?.[0]?.uri ||
-                           result.response?.uri ||
-                           result.url || null;
+<<<<<<< HEAD
+          // 兼容两种响应格式：
+          // 1. OpenAI 格式: { done: true, response: { generatedVideos: [...] } }
+          // 2. Agnes AI 格式: { status: "completed", video_url: "..." }
+          const isDone = result.done === true || result.status === 'completed' || result.status === 'succeeded';
+          const hasError = result.error || (result as any).status === 'failed';
+          
+          if (isDone) {
+            console.log('视频生成任务已完成，完整响应数据:', result);
+            
+            if (hasError) {
+              throw new Error(`模型生成错误: ${result.error?.message || JSON.stringify(result.error) || (result as any).status}`);
+            }
+            
+            // 优先提取 Agnes AI 原生 video_url
+            const agnesVideoUrl = (result as any).video_url || result.response?.video_url;
+            // 其次尝试 OpenAI 格式的嵌套路径
+            const response = result.response;
+            const openAiVideoUrl = response?.generatedVideos?.[0]?.video?.uri || 
+                                   response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+                                   response?.generatedVideos?.[0]?.uri ||
+                                   response?.video?.uri ||
+                                   response?.uri;
+            const downloadLink = agnesVideoUrl || openAiVideoUrl;
+=======
+          // Agnes AI 原生返回格式: { status, progress, video_url }
+          const status = result.status || result.state || 'in_progress';
+          const progress = result.progress || 0;
+          const videoUrl = result.video_url;
+>>>>>>> origin/main
 
           if (status === 'completed' || status === 'succeeded') {
             if (videoUrl) {
@@ -319,23 +341,36 @@ export default function App() {
                 setVideoStatus('视频已生成（点击链接下载）');
               }
             } else {
-              // Agnes AI 返回完成但 URL 暂未出现 -> 继续轮询
-              const AgnesError = result.error?.message || (result as any).response?.error;
+<<<<<<< HEAD
+              // Agnes AI 返回完成但无 URL（可能 URL 还未准备好）
+              const AgnesError = result.error || (result as any).response?.error;
               if (AgnesError) {
                 throw new Error(`视频生成失败: ${AgnesError}`);
               }
+              // 视频已提交但 URL 暂不可用，继续轮询
               console.warn('视频状态完成但无 URL，继续轮询:', result);
               setVideoStatus('视频生成完成，链接准备中，继续等待...');
-              setTimeout(poll, 10000);
+              setTimeout(poll, 10000); // 10秒后再试
               return;
+=======
+              throw new Error('视频生成完成但未返回下载链接');
+>>>>>>> origin/main
             }
             setIsGeneratingVideo(false);
           } else if (status === 'failed' || status === 'error') {
             throw new Error(`视频生成失败: ${result.error?.message || result.message || '未知错误'}`);
           } else {
-            // 进行中，显示进度
+<<<<<<< HEAD
+            // 支持多种进度字段
+            const metadata = result.metadata as any;
+            const progress = metadata?.progressPercent || (result as any).progress || 0;
+            setVideoStatus(progress > 0 ? `视频绘制中: ${progress}%` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
+            setTimeout(poll, 15000); // 15秒轮询一次
+=======
+            // 进行中
             setVideoStatus(progress > 0 ? `视频绘制中: ${progress}% (${status})` : '视频绘制中，请稍候... (AI 正在精雕细琢)');
-            setTimeout(poll, 10000); // 10秒轮询
+            setTimeout(poll, 5000); // 5秒轮询
+>>>>>>> origin/main
           }
         } catch (e: any) {
           console.error('Poll attempt failed:', e);
