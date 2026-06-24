@@ -302,6 +302,7 @@ export default function App() {
           const status = result.status || result.state || (result.done ? 'completed' : 'in_progress');
           const progress = result.progress || (result as any).metadata?.progressPercent || 0;
           const videoUrl = (result as any).video_url ||
+                           (result as any).remixed_from_video_id ||
                            result.response?.generatedVideos?.[0]?.video?.uri ||
                            result.response?.generatedVideos?.[0]?.uri ||
                            result.response?.uri ||
