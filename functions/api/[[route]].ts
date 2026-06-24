@@ -32,6 +32,50 @@ const isAdmin = async (c: any) => {
   return token === 'ZEN_ADMIN_LOGGED_IN';
 };
 
+// ============================================================
+// 健康检查接口 (前端检查 API Key 状态和管理员登录状态)
+// ============================================================
+app.get('/health', async (c) => {
+  const hasAgnesAIKey = !!c.env.AGNES_AI_API_KEY;
+  const hasModelScopeKey = !!c.env.MODEL_SCOPE_API_KEY;
+  const adminLoggedIn = await isAdmin(c);
+  
+  return c.json({
+    hasAgnesAIKey,
+    hasModelScopeKey,
+    isAdmin: adminLoggedIn,
+  });
+});
+
+// ============================================================
+// 管理员登录接口
+// ============================================================
+app.post('/admin/login', async (c) => {
+  const { email, password } = await c.req.json();
+  
+  const adminUser = c.env.ADMIN_USERNAME || 'admin';
+  const adminPass = c.env.ADMIN_PASSWORD || 'admin123';
+  
+  if (email === adminUser && password === adminPass) {
+    setCookie(c, 'admin_token', 'ZEN_ADMIN_LOGGED_IN', {
+      httpOnly: true,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    });
+    return c.json({ success: true });
+  } else {
+    return c.json({ success: false, error: '用户名或密码错误' }, 401);
+  }
+});
+
+// ============================================================
+// 管理员退出接口
+// ============================================================
+app.post('/admin/logout', async (c) => {
+  deleteCookie(c, 'admin_token');
+  return c.json({ success: true });
+});
+
 const checkQuota = async (c: any) => {
   if (await isAdmin(c)) return true;
 
