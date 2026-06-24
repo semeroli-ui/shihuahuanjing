@@ -1,12 +1,11 @@
 /**
  * Agnes AI 代理 Worker
  * 绕过 Cloudflare Pages Functions 的 SSL 525 问题
- * 只允许特定域名访问（白名单校验）
  */
 
 const AGNES_AI_BASE = 'https://apihub.agnes-ai.com';
 
-// 允许访问的域名白名单
+// 允许访问的域名白名单（支持通配符）
 const ALLOWED_ORIGINS = [
   'https://shihuahuanji.qjammo.de5.net',
   'http://shihuahuanji.qjammo.de5.net',
@@ -21,42 +20,46 @@ const ALLOWED_ORIGINS = [
 function isAllowedOrigin(origin) {
   if (!origin) return false;
   const lowerOrigin = origin.toLowerCase();
-  return ALLOWED_ORIGINS.some(allowed => lowerOrigin === allowed.toLowerCase());
+  
+  // 精确匹配
+  if (ALLOWED_ORIGINS.includes(lowerOrigin)) return true;
+  
+  // 允许所有 .qjammo.de5.net 子域名
+  if (lowerOrigin.endsWith('.qjammo.de5.net')) return true;
+  
+  // 允许所有 moranshixin.com 子域名
+  if (lowerOrigin.endsWith('.moranshixin.com')) return true;
+  
+  return false;
 }
 
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin');
     
-    // 调试日志（可在 Cloudflare Dashboard -> Workers -> 查看日志 中看到）
-    console.log('[Worker] Incoming request:', request.method, request.url, 'Origin:', origin);
+    console.log('[Worker] Request:', request.method, request.url);
+    console.log('[Worker] Origin:', origin);
+    console.log('[Worker] Is allowed:', isAllowedOrigin(origin));
+    
+    // 构建 CORS 响应头
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': origin || '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    };
     
     // CORS 预检请求处理
     if (request.method === 'OPTIONS') {
-      if (!isAllowedOrigin(origin)) {
-        console.log('[Worker] CORS preflight rejected. Origin:', origin);
-        return new Response('CORS preflight: Origin not allowed', { 
-          status: 403,
-          headers: {
-            'Content-Type': 'text/plain',
-          },
-        });
-      }
-      console.log('[Worker] CORS preflight allowed for origin:', origin);
       return new Response(null, {
         status: 204,
-        headers: {
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          'Access-Control-Max-Age': '86400',
-        },
+        headers: corsHeaders,
       });
     }
 
-    // 非白名单域名拒绝（但允许无 Origin 的请求，如 curl 测试）
+    // 检查白名单
     if (origin && !isAllowedOrigin(origin)) {
-      console.log('[Worker] Request rejected. Origin not in whitelist:', origin);
+      console.log('[Worker] Rejected origin:', origin);
       return new Response(JSON.stringify({ 
         error: 'Forbidden: Invalid Origin', 
         yourOrigin: origin,
@@ -65,7 +68,7 @@ export default {
         status: 403,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*', // 允许浏览器读取错误信息
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
@@ -77,9 +80,8 @@ export default {
       // POST /v1/videos - 提交视频生成任务
       if (request.method === 'POST' && url.pathname === '/v1/videos') {
         const body = await request.json();
-        console.log('[Worker] Video generation request:', body.prompt?.slice(0, 50));
+        console.log('[Worker] Video submit:', body.prompt?.slice(0, 50));
         
-        // 参数校验和补全
         const payload = {
           model: body.model || 'agnes-video-v2.0',
           prompt: body.prompt,
@@ -99,12 +101,12 @@ export default {
         });
 
         const data = await response.json();
-        console.log('[Worker] Video submit response:', response.status, JSON.stringify(data).slice(0, 200));
+        console.log('[Worker] Video submit response:', response.status);
         return new Response(JSON.stringify(data), {
           status: response.status,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': origin || '*',
+            ...corsHeaders,
           },
         });
       }
@@ -113,10 +115,13 @@ export default {
       if (request.method === 'GET' && url.pathname.startsWith('/v1/videos/')) {
         const taskId = url.pathname.split('/v1/videos/')[1];
         if (!taskId) {
-          return new Response('Bad Request: Missing taskId', { status: 400 });
+          return new Response(JSON.stringify({ error: 'Missing taskId' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
         }
 
-        console.log('[Worker] Video poll request:', taskId);
+        console.log('[Worker] Video poll:', taskId);
         const response = await fetch(`${AGNES_AI_BASE}/v1/videos/${taskId}`, {
           method: 'GET',
           headers: {
@@ -125,59 +130,26 @@ export default {
         });
 
         const data = await response.json();
-        console.log('[Worker] Video poll response:', response.status, JSON.stringify(data).slice(0, 200));
+        console.log('[Worker] Video poll response:', response.status);
         return new Response(JSON.stringify(data), {
           status: response.status,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': origin || '*',
+            ...corsHeaders,
           },
         });
       }
 
-      // POST /v1/images/generations - 图片生成（可选，统一走代理）
-      if (request.method === 'POST' && url.pathname === '/v1/images/generations') {
-        const body = await request.json();
-        console.log('[Worker] Image generation request:', body.prompt?.slice(0, 50));
-        
-        const payload = {
-          model: body.model || 'agnes-ai-v1',
-          prompt: body.prompt,
-          n: body.n || 1,
-          size: body.size || '1024x1024',
-        };
-
-        const response = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await response.json();
-        console.log('[Worker] Image response:', response.status, JSON.stringify(data).slice(0, 200));
-        return new Response(JSON.stringify(data), {
-          status: response.status,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': origin || '*',
-          },
-        });
-      }
-
-      console.log('[Worker] Not found:', request.method, url.pathname);
-      return new Response('Not Found', { status: 404 });
+      return new Response(JSON.stringify({ error: 'Not Found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
 
     } catch (err) {
-      console.error('[Worker] Error:', err.message, err.stack);
+      console.error('[Worker] Error:', err.message);
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': origin || '*',
-        },
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
   },
