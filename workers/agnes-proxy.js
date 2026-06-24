@@ -306,6 +306,60 @@ export default {
       }
 
       // ============================================================
+      // 3. POST /v1/images/generations - 图片生成
+      // ============================================================
+      if (request.method === 'POST' && url.pathname === '/v1/images/generations') {
+        const body = await request.json();
+        console.log('[Worker] Image generation, prompt length:', body.prompt?.length);
+
+        // 自动追加水墨丹青质量后缀
+        const qualitySuffix = ', ancient Chinese ink wash painting on xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality';
+        const enhancedPrompt = (body.prompt || '') + qualitySuffix;
+
+        try {
+          const imgRes = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: body.model || 'agnes-ai-v1',
+              prompt: enhancedPrompt,
+              n: body.n || 1,
+              size: body.size || '1024x1024',
+            }),
+          });
+
+          if (!imgRes.ok) {
+            const errorText = await imgRes.text();
+            console.error('[Worker] Agnes AI Image error:', imgRes.status, errorText);
+            return new Response(JSON.stringify({ 
+              error: 'Agnes AI Image generation failed', 
+              status: imgRes.status,
+              details: errorText
+            }), {
+              status: imgRes.status,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            });
+          }
+
+          const data = await imgRes.json();
+          console.log('[Worker] Image generation success');
+          return new Response(JSON.stringify(data), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        } catch (err) {
+          console.error('[Worker] Image generation error:', err.message);
+          return new Response(JSON.stringify({ error: err.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+      }
+
+      // ============================================================
       // 4. GET /agnesapi?video_id=... - 专用轮询端点（直接访问）
       // ============================================================
       if (request.method === 'GET' && url.pathname === '/agnesapi') {
@@ -336,7 +390,7 @@ export default {
         });
       }
 
-      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, GET /v1/videos/{id}, GET /agnesapi?video_id=..., GET /download?url=..., POST /tts' }), {
+      return new Response(JSON.stringify({ error: 'Not Found', hint: 'Supported: POST /v1/videos, POST /v1/images/generations, GET /v1/videos/{id}, GET /agnesapi?video_id=..., GET /download?url=..., POST /tts' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });

@@ -649,6 +649,8 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality`;
 
+  const errors: string[] = [];
+
   // 策略1: Agnes AI (主力，同步返回，体验更好)
   const agnesKey = c.env.AGNES_AI_API_KEY;
   if (agnesKey) {
@@ -668,7 +670,10 @@ app.post('/generate-image', async (c) => {
       }
     } catch (err: any) {
       console.error('[Image Gen] Agnes AI failed:', err.message);
+      errors.push(`Agnes AI: ${err.message}`);
     }
+  } else {
+    errors.push('Agnes AI: 未配置 API Key');
   }
 
   // 策略2: ModelScope 兜底 (异步轮询，需要等待)
@@ -686,10 +691,17 @@ app.post('/generate-image', async (c) => {
       }
     } catch (err: any) {
       console.error('[Image Gen] ModelScope also failed:', err.message);
+      errors.push(`ModelScope: ${err.message}`);
     }
+  } else {
+    errors.push('ModelScope: 未配置 API Key');
   }
 
-  return c.json({ error: "所有图片生成服务均不可用。请稍后再试或联系管理员。" }, 500);
+  return c.json({ 
+    error: "所有图片生成服务均不可用", 
+    details: errors.join('; '),
+    hint: "Agnes AI 可能存在 SSL 证书问题 (Error 525)，请联系 Agnes AI 技术支持"
+  }, 503);
 });
 
 // ============================================================
