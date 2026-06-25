@@ -649,11 +649,29 @@ app.post('/generate-image', async (c) => {
   const { prompt } = await c.req.json();
   const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality`;
 
-  // 策略1: Agnes AI (主力，同步返回，体验更好)
+  // 策略1: ModelScope 千问 Z-Image (主力，质量更佳)
+  const msKey = c.env.MODEL_SCOPE_API_KEY;
+  if (msKey) {
+    try {
+      console.log('[Image Gen] Trying ModelScope Z-Image...');
+      const result = await Promise.race([
+        callModelScopeImage(msKey, enhancedPrompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope timeout (90s)')), 90000))
+      ]) as any;
+      if (result.url) {
+        console.log('[Image Gen] ModelScope success');
+        return c.json({ generatedImages: [{ image: { url: result.url } }] });
+      }
+    } catch (err: any) {
+      console.error('[Image Gen] ModelScope failed:', err.message);
+    }
+  }
+
+  // 策略2: Agnes AI 兜底
   const agnesKey = c.env.AGNES_AI_API_KEY;
   if (agnesKey) {
     try {
-      console.log('[Image Gen] Trying Agnes AI...');
+      console.log('[Image Gen] Fallback to Agnes AI...');
       const result = await Promise.race([
         callAgnesAIImage(agnesKey, enhancedPrompt),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Agnes AI timeout (30s)')), 30000))
@@ -667,25 +685,7 @@ app.post('/generate-image', async (c) => {
         });
       }
     } catch (err: any) {
-      console.error('[Image Gen] Agnes AI failed:', err.message);
-    }
-  }
-
-  // 策略2: ModelScope 兜底 (异步轮询，需要等待)
-  const msKey = c.env.MODEL_SCOPE_API_KEY;
-  if (msKey) {
-    try {
-      console.log('[Image Gen] Fallback to ModelScope...');
-      const result = await Promise.race([
-        callModelScopeImage(msKey, enhancedPrompt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope timeout (60s)')), 60000))
-      ]) as any;
-      if (result.url) {
-        console.log('[Image Gen] ModelScope success');
-        return c.json({ generatedImages: [{ image: { url: result.url } }] });
-      }
-    } catch (err: any) {
-      console.error('[Image Gen] ModelScope also failed:', err.message);
+      console.error('[Image Gen] Agnes AI also failed:', err.message);
     }
   }
 
