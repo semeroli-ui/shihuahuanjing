@@ -419,19 +419,36 @@ app.post('/generate-prompt', async (c) => {
 你的任务是将用户提供的诗词，深度解析其意境与情感，转化为专为【水墨丹青国风意境画】设计的英文提示词。
 
 输出必须为严格的 JSON 格式：{"chinese": "...", "english": "..."}
-- chinese: 对诗句意境的优美中文描述，2-3句，文学性强。
-- english: 专门用于图片生成的水墨丹青风格英文提示词。要求：
-  1. 核心风格：水墨画 (Chinese ink wash painting)、宣纸/绢本质感、工笔与写意结合
-  2. 画面元素：留白 (negative space)、墨色浓淡 (thick/thin ink gradients)、飞白 (dry brush strokes)、晕染 (ink wash blending)
-  3. 色彩：水墨为主（焦浓重淡清五色），可点缀朱红 (vermilion red)、石青 (azurite blue)、石绿 (malachite green) 等矿物色
-  4. 构图：中国传统散点透视或深远构图，山水、人物、花鸟、楼阁均可
-  5. 氛围：诗情画意、禅意悠远、古典雅致
-  6. 画质增强词：ancient Chinese painting on rice paper, handscroll format, museum-quality brushwork, traditional Chinese pigments, xuan paper texture, delicate and refined, masterpiece
 
-示例英文提示词格式：
-"A serene Chinese ink wash painting of [场景], with traditional brushstrokes on aged xuan paper, wet ink gradients and dry brush textures, subtle washes of ink varying from deep black to pale grey, touches of azurite blue and malachite green, elegant composition with generous white space, poetic and meditative atmosphere, handscroll format, museum-quality, masterpiece"
+【chinese 字段要求】结构化的详细视觉解析，约 150-200 字，包含以下四个维度：
 
-注意：英文提示词必须足够详细（至少 60 个英文单词），以水墨丹青为核心风格，绝不出现 photographic/photorealistic/cinematic lighting/8k/DSLR/focus puller 等西方摄影词汇。`;
+1. 场景构成
+- 空间层次：远景、中景、近景的具体元素与布局
+- 时间背景：季节、时辰、天气氛围（晨雾/暮霭/秋雨等）
+
+2. 意象元素
+- 核心物象：山石、树木、建筑、人物、马匹、舟船等具体描绘
+- 点睛之笔：飞鸟、流水、云烟、落叶等动态细节
+
+3. 水墨技法建议
+- 笔法：皴法类型（斧劈皴/披麻皴/米点皴）、点染、晕染
+- 墨色：焦浓重淡清五色的层次分布与过渡
+- 留白：画面呼吸感的空间设计，虚实相生
+
+4. 情调氛围
+- 情感基调：苍凉、宁静、雄浑、婉约、空灵等
+- 禅意表达：动与静、虚与实、有与无的辩证
+
+【english 字段要求】
+- 核心风格：Chinese ink wash painting、宣纸/绢本质感、工笔与写意结合
+- 必备元素：negative space、ink gradients、dry brush strokes、ink wash blending
+- 色彩：水墨五色为主，可点缀 vermilion red、azurite blue、malachite green
+- 构图：传统散点透视或深远构图
+- 画质增强：ancient Chinese painting on rice paper, museum-quality brushwork, handscroll format, masterpiece
+- 长度：至少 70 个英文单词，严禁出现 photographic/cinematic/8k/DSLR 等摄影词汇
+
+示例输出：
+{"chinese": "【场景构成】远景为连绵云山，中景是荒废戍楼与残断城墙，近景一骑旅人迎风而行。时值深秋傍晚，北风萧瑟，暮色苍茫。【意象元素】山石用斧劈皴勾勒，棱角分明；城楼砖缝中野草摇曳，一抹斜阳如血浸染墙基；马匹鬃毛飞扬，旅人衣袂翻卷，马蹄踏碎枯草。远处孤雁掠过天际，落叶随风向西。【水墨技法建议】以焦墨勾勒山石轮廓，浓墨染城楼阴影，淡墨晕染天空与远山，飞白笔法表现风势，大面积留白呈现云山雾气与天空。【情调氛围】苍凉悲壮，古今幽恨在水墨氤氲间凝结，禅意体现于行旅与静止山石的对立，动与静的永恒张力。", "english": "A vast Chinese ink wash painting of late autumn border fortress landscape, traditional brushwork on aged xuan paper, powerful axe-cut texture strokes (斧劈皴) defining rugged mountain ridges in deep black ink, dilapidated watchtower with crumbling bricks rendered in layered ink wash from dark to pale grey, a solitary rider on horseback facing fierce northern wind, horse mane and traveler's robes swept by wind in dynamic dry brush strokes (飞白), setting sun like blood seeping into ancient walls in vermilion red wash, distant lone goose crossing grey sky, fallen leaves drifting westward, generous negative space in upper sky creating ethereal cloud mist atmosphere, meditative and melancholic mood, handscroll format, museum-quality masterpiece, traditional Chinese pigments"}`
 
     let text = '';
 
