@@ -150,8 +150,8 @@ async function callAgnesAIChat(apiKey: string, userPrompt: string, systemPrompt?
  * 自动追加质量增强后缀，防止模糊
  */
 async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_json?: string; url?: string }> {
-  // 水墨丹青质量增强后缀
-  const qualitySuffix = ', ancient Chinese ink wash painting on xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality';
+  // 水墨丹青质量增强后缀（强化版）
+  const qualitySuffix = ', ancient Chinese ink wash painting on xuan paper, museum-quality brushwork, traditional Chinese pigments, sharp details, clear lines, high resolution, 4k quality, no blur, crisp edges, delicate and refined, masterpiece, best quality, ultra detailed, photorealistic ink rendering';
   const enhancedPrompt = prompt + qualitySuffix;
 
   const response = await fetch(`${AGNES_AI_BASE}/v1/images/generations`, {
@@ -301,7 +301,15 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
       'Authorization': `Bearer ${apiKey}`,
       'X-ModelScope-Async-Mode': 'true',
     },
-    body: JSON.stringify({ model: 'Tongyi-MAI/Z-Image', prompt, size: '1024x1024', n: 1 }),
+    body: JSON.stringify({ 
+      model: 'Tongyi-MAI/Z-Image', 
+      prompt, 
+      size: '1024x1024', 
+      n: 1,
+      // 尝试开启高质量模式（如果API支持）
+      quality: 'hd',
+      style: 'natural'
+    }),
   });
   if (!submitRes.ok) throw new Error(`ModelScope Image submit error ${submitRes.status}: ${await submitRes.text()}`);
   const { task_id } = await submitRes.json() as any;
@@ -664,7 +672,8 @@ app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
 
   const { prompt } = await c.req.json();
-  const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, delicate and refined, masterpiece, best quality`;
+  // 强化质量后缀：防止模糊、增强细节
+  const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, sharp details, clear lines, high resolution, 4k quality, no blur, crisp edges, delicate and refined, masterpiece, best quality, ultra detailed, photorealistic ink rendering`;
 
   // 策略1: ModelScope 千问 Z-Image (主力，质量更佳)
   const msKey = c.env.MODEL_SCOPE_API_KEY;

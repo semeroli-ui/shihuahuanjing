@@ -65,6 +65,14 @@ export default function App() {
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
+  // 状态消息3秒后自动消失
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
+
   const checkHealth = async () => {
     setIsCheckingHealth(true);
     try {
