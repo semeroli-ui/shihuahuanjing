@@ -512,7 +512,7 @@ export default function App() {
             </button>
           </div>
           
-          <div className="text-right max-w-[200px]">
+          <div className="text-right max-w-[160px] md:max-w-[200px]">
             <p className="text-[10px] leading-relaxed text-zen-ink/30 italic">
               “夫画者，从于心者也。感于物，动于情，发于笔端。”
             </p>
@@ -537,10 +537,10 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-zen-paper paper-texture shadow-2xl z-[70] p-12 overflow-hidden flex flex-col"
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-zen-paper paper-texture shadow-2xl z-[70] p-6 md:p-12 overflow-hidden flex flex-col"
             >
-              <div className="flex justify-between items-center mb-12">
-                <h2 className="text-2xl font-serif tracking-widest">藏书阁</h2>
+              <div className="flex justify-between items-center mb-8 md:mb-12">
+                <h2 className="text-xl md:text-2xl font-serif tracking-widest">藏书阁</h2>
                 <button onClick={() => setShowLibrary(false)} className="text-zen-ink/40 hover:text-zen-ink">收起</button>
               </div>
               
@@ -552,11 +552,11 @@ export default function App() {
                   </div>
                 ) : (
                   library.map(item => (
-                    <div key={item.id} className="p-6 bg-white/40 border border-zen-ink/5 rounded-3xl group hover:border-zen-vermilion/20 transition-all">
+                    <div key={item.id} className="p-4 md:p-6 bg-white/40 border border-zen-ink/5 rounded-3xl group hover:border-zen-vermilion/20 transition-all">
                       <p className="serif-text text-lg mb-4 leading-relaxed line-clamp-4">{item.poem}</p>
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] text-zen-ink/30">{item.date}</span>
-                        <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-4">
                           <button onClick={() => loadFromLibrary(item)} className="text-xs text-zen-accent hover:underline">研墨</button>
                           <button onClick={() => removeFromLibrary(item.id)} className="text-xs text-rose-400 hover:text-rose-600">
                             <Trash2 size={14} />
@@ -776,12 +776,12 @@ export default function App() {
               {generatedImage ? (
                 <motion.div key="image" className="w-full h-full relative" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                   <img src={generatedImage} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  <button onClick={downloadImage} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
+                  <button onClick={downloadImage} className="absolute bottom-4 right-4 md:bottom-8 md:right-8 p-3 md:p-4 bg-black/40 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white transition-all shadow-2xl">
                     <Download size={24} />
                   </button>
                 </motion.div>
               ) : (
-                <motion.div key="empty-image" className="w-full h-full flex flex-col items-center justify-center p-12 text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <motion.div key="empty-image" className="w-full h-full flex flex-col items-center justify-center p-6 md:p-12 text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                   {isGeneratingImage ? (
                     <div className="space-y-6">
                       <Loader2 className="animate-spin text-zen-vermilion mx-auto" size={32} />
@@ -842,12 +842,12 @@ export default function App() {
                   {videoUrl ? (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full relative">
                       <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
-                      <button onClick={downloadVideo} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
+                      <button onClick={downloadVideo} className="absolute bottom-4 right-4 md:bottom-8 md:right-8 p-3 md:p-4 bg-black/40 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white transition-all shadow-2xl">
                         <Download size={24} />
                       </button>
                     </motion.div>
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center p-12 text-center bg-zen-paper/30 backdrop-blur-sm">
+                    <div className="w-full h-full flex flex-col items-center justify-center p-6 md:p-12 text-center bg-zen-paper/30 backdrop-blur-sm">
                       <div className="relative w-24 h-24 mb-8">
                         <div className="absolute inset-0 border border-zen-vermilion/10 rounded-full"></div>
                         <motion.div 
@@ -879,7 +879,7 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="mt-24 py-16 border-t border-zen-ink/5 flex flex-col items-center gap-8">
+      <footer className="mt-16 md:mt-24 py-8 md:py-16 border-t border-zen-ink/5 flex flex-col items-center gap-8">
         <div className="flex gap-12 text-[10px] tracking-[0.5em] text-zen-ink/20 uppercase font-bold">
           <span>Agnes AI Engine</span>
           <span>Cloudflare Edge</span>
@@ -914,7 +914,7 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-full max-w-md bg-zen-paper paper-texture p-10 rounded-3xl shadow-2xl border border-zen-ink/10"
+              className="relative w-full max-w-md bg-zen-paper paper-texture p-6 md:p-10 rounded-3xl shadow-2xl border border-zen-ink/10"
             >
               <h3 className="text-xl font-serif mb-6 tracking-widest">管理员登录</h3>
               <div className="space-y-4">
@@ -959,7 +959,7 @@ export default function App() {
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-zen-paper paper-texture shadow-2xl z-[70] p-12 flex flex-col"
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-zen-paper paper-texture shadow-2xl z-[70] p-6 md:p-12 flex flex-col"
             >
               <div className="flex justify-between items-center mb-12">
                 <h2 className="text-2xl font-serif tracking-widest">管理后台</h2>
