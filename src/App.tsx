@@ -65,6 +65,14 @@ export default function App() {
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
+  // 状态消息3秒后自动消失
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
+
   const checkHealth = async () => {
     setIsCheckingHealth(true);
     try {
@@ -808,7 +816,7 @@ export default function App() {
                     className="py-4 border border-zen-ink/20 flex items-center justify-center gap-3 hover:bg-zen-ink hover:text-zen-paper transition-all duration-500 disabled:opacity-30"
                   >
                     {isGeneratingImage ? <Loader2 className="animate-spin" size={16} /> : <ImageIcon size={16} />}
-                    <span className="tracking-[0.2em] text-sm font-serif">生成诗意原画</span>
+                    <span className="tracking-[0.2em] text-sm font-serif">{isGeneratingImage ? '墨染中...' : '画卷初绽'}</span>
                   </button>
 
                   <button
@@ -823,10 +831,10 @@ export default function App() {
                     {isGeneratingVideo ? <Loader2 className="animate-spin" size={20} /> : cooldown > 0 ? <History size={20} /> : <Video size={20} />}
                     <span className="tracking-[0.4em] font-serif text-lg">
                       {isGeneratingVideo
-                        ? '画卷展开中...'
+                        ? '意境重现中...'
                         : cooldown > 0
                           ? `静候 (${cooldown}s)`
-                          : '生成视频画卷'}
+                          : '意境重现'}
                     </span>
                   </button>
                 </div>
@@ -891,7 +899,7 @@ export default function App() {
                       </div>
                       <p className="text-zen-ink/20 font-serif tracking-[0.3em] text-lg">虚位以待,静候佳作</p>
                       <p className="text-[10px] text-zen-ink/10 max-w-xs mx-auto leading-relaxed">
-                        解析诗词意境后,点击"生成诗意原画"即可见证文字化为视觉的瞬间。
+                        解析诗词意境后，点击「画卷初绽」即可见证文字化为视觉的瞬间。
                       </p>
                     </div>
                   )}
