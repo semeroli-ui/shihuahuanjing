@@ -1,19 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --font-serif: "Noto Serif SC", "Playfair Display", serif;
+  --font-serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", "Playfair Display", serif;
   --color-zen-ink: #2d2417;
   --color-zen-paper: #f4efe5;
   --color-zen-accent: #5a5a40;
   --color-zen-vermilion: #c9302c;
   --color-zen-celadon: #708d81;
   --color-zen-indigo: #2e4053;
+  /* 参考图新增配色 */
+  --color-ink-dark: #1a1410;
+  --color-paper-warm: #faf8f4;
+  --color-seal-red: #8b2323;
+  --color-border-soft: rgba(45, 36, 23, 0.08);
+  --color-border-medium: rgba(45, 36, 23, 0.15);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background-color: var(--color-zen-paper);
+  background-color: #f0ece4;
   color: var(--color-zen-ink);
-  font-family: var(--font-sans);
+  font-family: system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
 }
 
@@ -21,9 +31,9 @@ body {
   font-family: var(--font-serif);
 }
 
-/* 模拟宣纸质感 */
+/* 宣纸纹理背景 */
 .paper-texture {
-  background-color: var(--color-zen-paper);
+  background-color: #f5f2ec;
   background-image: url("https://www.transparenttextures.com/patterns/paper-fibers.png");
 }
 
@@ -102,4 +112,545 @@ body {
 
 .animate-unroll {
   animation: unroll 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ============================================
+   新中式设计改造 - 参考图风格
+   ============================================ */
+
+/* 全屏新中式布局 */
+.neozhong-layout {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  min-height: 100vh;
+  background: #f5f2ec;
+}
+
+/* 左侧面板 - 参考图白底卡片 */
+.neozhong-left-panel {
+  background: #ffffff;
+  border-right: 1px solid rgba(45, 36, 23, 0.06);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+}
+
+/* Logo 区域 - 印章图标 */
+.neozhong-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 32px;
+  border-bottom: 1px solid rgba(45, 36, 23, 0.05);
+}
+
+.seal-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #8b2323 0%, #a52a2a 100%);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(139, 35, 35, 0.3);
+  position: relative;
+}
+
+.seal-icon::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+/* 诗词输入区 */
+.neozhong-input-section {
+  padding: 24px 32px;
+  border-bottom: 1px solid rgba(45, 36, 23, 0.05);
+}
+
+.poem-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1410;
+  outline: none;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(45, 36, 23, 0.1);
+  transition: border-color 0.3s;
+}
+
+.poem-title-input:focus {
+  border-bottom-color: #8b2323;
+}
+
+.poem-title-input::placeholder {
+  color: rgba(26, 20, 16, 0.25);
+}
+
+/* 诗词内容展示区 */
+.neozhong-poem-display {
+  flex: 1;
+  padding: 24px 32px;
+  background: #fdfcfa;
+  margin: 0 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(45, 36, 23, 0.04);
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.neozhong-poem-display::-webkit-scrollbar {
+  width: 3px;
+}
+
+.neozhong-poem-display::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.neozhong-poem-display::-webkit-scrollbar-thumb {
+  background: rgba(139, 35, 35, 0.15);
+  border-radius: 10px;
+}
+
+.poem-text {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 2.2;
+  color: #2d2417;
+  letter-spacing: 0.05em;
+}
+
+.poem-meta {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  color: rgba(45, 36, 23, 0.45);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(45, 36, 23, 0.06);
+}
+
+/* 意境风格标签区 - 参考图胶囊标签 */
+.style-tags-section {
+  padding: 20px 32px;
+}
+
+.style-tags-title {
+  font-family: var(--font-serif);
+  font-size: 11px;
+  color: rgba(45, 36, 23, 0.4);
+  letter-spacing: 0.2em;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.style-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.style-tag {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  border: 1px solid rgba(45, 36, 23, 0.12);
+  background: white;
+  color: rgba(45, 36, 23, 0.7);
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.style-tag:hover {
+  border-color: rgba(139, 35, 35, 0.3);
+  color: #8b2323;
+}
+
+.style-tag.active {
+  background: linear-gradient(135deg, #8b2323 0%, #a52a2a 100%);
+  border-color: #8b2323;
+  color: white;
+  box-shadow: 0 2px 10px rgba(139, 35, 35, 0.25);
+}
+
+/* 底部操作按钮 - 参考图深色按钮 */
+.neozhong-actions {
+  padding: 24px 32px;
+  margin-top: auto;
+  border-top: 1px solid rgba(45, 36, 23, 0.05);
+}
+
+.neozhong-cta-btn {
+  width: 100%;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #1a1410 0%, #2d2417 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(26, 20, 16, 0.15);
+}
+
+.neozhong-cta-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(26, 20, 16, 0.2);
+}
+
+.neozhong-cta-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 右侧展示区 - 参考图大面积展示 */
+.neozhong-right-panel {
+  background: #f0ece4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  position: relative;
+  min-height: 100vh;
+}
+
+/* 右下角水印 */
+.neozhong-watermark {
+  position: fixed;
+  bottom: 32px;
+  right: 40px;
+  font-family: var(--font-serif);
+  font-size: 11px;
+  color: rgba(45, 36, 23, 0.12);
+  letter-spacing: 0.3em;
+  writing-mode: vertical-rl;
+  pointer-events: none;
+}
+
+/* 图片展示容器 - 参考图大圆角 */
+.image-showcase {
+  width: 100%;
+  max-width: 900px;
+  aspect-ratio: 4/3;
+  background: #ffffff;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 8px 48px rgba(45, 36, 23, 0.08), 0 2px 8px rgba(45, 36, 23, 0.04);
+  position: relative;
+}
+
+/* 装饰性角落 - 参考图朱红点缀 */
+.image-showcase::before,
+.image-showcase::after {
+  content: '';
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(139, 35, 35, 0.2);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.image-showcase::before {
+  top: 16px;
+  left: 16px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 8px;
+}
+
+.image-showcase::after {
+  bottom: 16px;
+  right: 16px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 8px;
+}
+
+.image-showcase-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* 图片内容 */
+.showcase-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease;
+}
+
+.image-showcase:hover .showcase-image {
+  transform: scale(1.02);
+}
+
+/* 空状态 - 参考图留白风格 */
+.showcase-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fdfcfa 0%, #f8f6f1 100%);
+  text-align: center;
+  padding: 48px;
+}
+
+.showcase-empty-icon {
+  width: 80px;
+  height: 80px;
+  border: 1px solid rgba(45, 36, 23, 0.08);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  color: rgba(45, 36, 23, 0.12);
+}
+
+.showcase-empty-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  color: rgba(45, 36, 23, 0.2);
+  letter-spacing: 0.2em;
+  margin-bottom: 12px;
+}
+
+.showcase-empty-desc {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  color: rgba(45, 36, 23, 0.12);
+  line-height: 1.8;
+  max-width: 280px;
+}
+
+/* 加载状态 */
+.showcase-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fdfcfa 0%, #f8f6f1 100%);
+  gap: 20px;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 2px solid rgba(139, 35, 35, 0.08);
+  border-top-color: #8b2323;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.showcase-loading-text {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  color: rgba(45, 36, 23, 0.3);
+  letter-spacing: 0.15em;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 图片下载按钮 */
+.showcase-download-btn {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(45, 36, 23, 0.08);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2d2417;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.image-showcase:hover .showcase-download-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.showcase-download-btn:hover {
+  background: #8b2323;
+  color: white;
+  border-color: #8b2323;
+}
+
+/* 状态提示 - 参考图底部居中 */
+.showcase-status {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  border-radius: 24px;
+  border: 1px solid rgba(45, 36, 23, 0.05);
+}
+
+.showcase-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8b2323;
+  opacity: 0.5;
+}
+
+.showcase-status-text {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  color: rgba(45, 36, 23, 0.5);
+  letter-spacing: 0.1em;
+}
+
+/* 诗词分析区 - 意境描述 */
+.visual-prompt-section {
+  margin-top: 32px;
+  width: 100%;
+  max-width: 900px;
+  padding: 24px 28px;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid rgba(45, 36, 23, 0.04);
+}
+
+.visual-prompt-label {
+  font-family: var(--font-serif);
+  font-size: 10px;
+  color: rgba(45, 36, 23, 0.35);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.visual-prompt-content {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.9;
+  color: rgba(45, 36, 23, 0.7);
+}
+
+/* 视频画卷区 - 参考图卷轴风格 */
+.video-scroll-section {
+  margin-top: 48px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.video-scroll-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.video-scroll-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(139, 35, 35, 0.15) 0%, transparent 100%);
+}
+
+.video-scroll-label {
+  font-family: var(--font-serif);
+  font-size: 11px;
+  color: rgba(139, 35, 35, 0.6);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+
+.video-scroll-container {
+  aspect-ratio: 16/9;
+  background: white;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 48px rgba(45, 36, 23, 0.06);
+  position: relative;
+}
+
+/* 卷轴边缘效果 */
+.video-scroll-container::before,
+.video-scroll-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.video-scroll-container::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(45, 36, 23, 0.08) 0%, transparent 100%);
+}
+
+.video-scroll-container::after {
+  right: 0;
+  background: linear-gradient(-90deg, rgba(45, 36, 23, 0.08) 0%, transparent 100%);
+}
+
+/* 响应式适配 */
+@media (max-width: 1024px) {
+  .neozhong-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .neozhong-left-panel {
+    position: relative;
+    height: auto;
+  }
+  
+  .neozhong-right-panel {
+    min-height: auto;
+    padding: 32px 24px;
+  }
+  
+  .image-showcase {
+    max-width: 100%;
+    aspect-ratio: 16/10;
+  }
+  
+  .neozhong-watermark {
+    display: none;
+  }
 }
