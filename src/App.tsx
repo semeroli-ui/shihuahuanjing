@@ -870,8 +870,8 @@ export default function App() {
 
             <AnimatePresence mode="wait">
               {generatedImage ? (
-                <motion.div key="image" className="w-full h-full relative" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <img src={generatedImage} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <motion.div key="image" className="w-full h-full relative bg-gradient-to-br from-zen-paper/30 to-zen-cream/50" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <img src={generatedImage} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                   <button onClick={downloadImage} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
                     <Download size={24} />
                   </button>
