@@ -668,9 +668,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="max-w-7xl mx-auto py-8 px-4 md:px-12 grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-16 items-start">
-        {/* Left Column: Input & Analysis (4 cols) */}
-        <div className="lg:col-span-4 space-y-12">
+      <main className="max-w-[1400px] mx-auto py-8 px-4 md:px-12 grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-16 items-start">
+        {/* Left Column: Input & Analysis (3 cols) */}
+        <div className="lg:col-span-3 space-y-10">
           <section className="relative">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
@@ -853,8 +853,8 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        {/* Right Column: Video/Image Preview (8 cols) */}
-        <div className="lg:col-span-8 relative">
+        {/* Right Column: Image/Video Preview (9 cols) */}
+        <div className="lg:col-span-9 relative">
           <div className="flex items-center gap-4 mb-8">
             <div className="w-8 h-px bg-zen-ink/20"></div>
             <h2 className="text-xs uppercase tracking-[0.4em] text-zen-accent font-bold">
@@ -863,7 +863,7 @@ export default function App() {
           </div>
 
           {/* Image Preview Window */}
-          <div className="relative aspect-video lg:aspect-[16/9] bg-zen-ink/5 rounded-sm overflow-hidden shadow-2xl group border border-zen-ink/10">
+          <div className="relative aspect-[3/2] lg:aspect-[4/3] bg-zen-ink/5 rounded-sm overflow-hidden shadow-2xl group border border-zen-ink/10">
             {/* 装饰性角落 */}
             <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-zen-vermilion/40 m-4 z-10"></div>
             <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-zen-vermilion/40 m-4 z-10"></div>
@@ -921,7 +921,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 30 }}
-                className="mt-16 space-y-8"
+                className="mt-8 space-y-8"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-px bg-zen-vermilion/30"></div>
@@ -937,10 +937,30 @@ export default function App() {
 
                   {videoUrl ? (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full relative">
-                      <video src={videoUrl} controls autoPlay loop className="w-full h-full object-cover" />
-                      <button onClick={downloadVideo} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
-                        <Download size={24} />
-                      </button>
+                      {videoUrl.startsWith('blob:') ? (
+                        <>
+                          <video src={videoUrl} controls autoPlay loop className="w-full h-full object-contain" />
+                          <button onClick={downloadVideo} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
+                            <Download size={24} />
+                          </button>
+                        </>
+                      ) : (
+                        // 非 blob URL（跨域无法直接播放），显示下载按钮
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-zen-ink/5 backdrop-blur-sm">
+                          <Video size={48} className="text-zen-vermilion/40 mb-6" />
+                          <p className="text-zen-ink/50 font-serif tracking-widest text-sm mb-8">视频已生成</p>
+                          <a
+                            href={videoUrl}
+                            download={`诗画幻境_视频_${new Date().getTime()}.mp4`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-8 py-4 bg-zen-vermilion text-white font-serif tracking-[0.3em] text-sm rounded-sm hover:bg-zen-vermilion/80 transition-colors shadow-2xl flex items-center gap-3"
+                          >
+                            <Download size={18} />
+                            下载视频
+                          </a>
+                        </div>
+                      )}
                     </motion.div>
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center p-12 text-center bg-zen-paper/30 backdrop-blur-sm">
