@@ -338,6 +338,53 @@ async function callModelScopeImage(apiKey: string, prompt: string): Promise<{ ur
   throw new Error('ModelScope Image timeout (60s)');
 }
 
+/**
+ * ModelScope Qwen-Image-2512 图片生成 (更新模型，质量更好)
+ * 异步模式，与 Z-Image 相同的 API 接口
+ */
+async function callModelScopeQwenImage(apiKey: string, prompt: string): Promise<{ url?: string }> {
+  // Step 1: 提交异步任务
+  const submitRes = await fetch(`${MODELSCOPE_BASE}/v1/images/generations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-ModelScope-Async-Mode': 'true',
+    },
+    body: JSON.stringify({ 
+      model: 'Qwen/Qwen-Image-2512', 
+      prompt, 
+      size: '1024x1024', 
+      n: 1,
+    }),
+  });
+  if (!submitRes.ok) throw new Error(`ModelScope Qwen-Image submit error ${submitRes.status}: ${await submitRes.text()}`);
+  const { task_id } = await submitRes.json() as any;
+  if (!task_id) throw new Error('ModelScope Qwen-Image: no task_id returned');
+
+  // Step 2: 轮询结果 (最多90秒，每5秒一次)
+  for (let i = 0; i < 18; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const pollRes = await fetch(`${MODELSCOPE_BASE}/v1/tasks/${task_id}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-ModelScope-Task-Type': 'image_generation',
+      },
+    });
+    if (!pollRes.ok) throw new Error(`ModelScope Qwen-Image poll error ${pollRes.status}`);
+    const data = await pollRes.json() as any;
+
+    if (data.task_status === 'SUCCEED') {
+      return { url: data.output_images?.[0] };
+    }
+    if (data.task_status === 'FAILED') {
+      throw new Error(`ModelScope Qwen-Image generation failed`);
+    }
+    // RUNNING -> 继续轮询
+  }
+  throw new Error('ModelScope Qwen-Image timeout (90s)');
+}
+
 // ModelScope 不支持 OpenAI 兼容的 TTS HTTP API，仅提供 Python SDK
 // 暂时禁用，等待 Agnes AI SSL 问题解决后启用
 async function callModelScopeTTS(apiKey: string, text: string): Promise<ArrayBuffer> {
@@ -666,7 +713,7 @@ app.post('/poll-video', async (c) => {
 });
 
 // ============================================================
-// 8. 图像生成接口 (Agnes AI -> ModelScope)
+// 8. 图像生成接口 (Qwen-Image-2512 -> Z-Image -> Agnes AI)
 // ============================================================
 app.post('/generate-image', async (c) => {
   if (!(await checkQuota(c))) return c.json({ error: "今日免费额度已用完" }, 429);
@@ -675,25 +722,43 @@ app.post('/generate-image', async (c) => {
   // 强化质量后缀：防止模糊、增强细节
   const enhancedPrompt = `${prompt}, traditional Chinese ink wash painting on aged xuan paper, museum-quality brushwork, traditional Chinese pigments, sharp details, clear lines, high resolution, 4k quality, no blur, crisp edges, delicate and refined, masterpiece, best quality, ultra detailed, photorealistic ink rendering`;
 
-  // 策略1: ModelScope 千问 Z-Image (主力，质量更佳)
   const msKey = c.env.MODEL_SCOPE_API_KEY;
+
+  // 策略1: ModelScope Qwen-Image-2512 (最新模型，首选)
+  if (msKey) {
+    try {
+      console.log('[Image Gen] Trying ModelScope Qwen-Image-2512...');
+      const result = await Promise.race([
+        callModelScopeQwenImage(msKey, enhancedPrompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope Qwen timeout (90s)')), 90000))
+      ]) as any;
+      if (result.url) {
+        console.log('[Image Gen] ModelScope Qwen-Image-2512 success');
+        return c.json({ generatedImages: [{ image: { url: result.url } }] });
+      }
+    } catch (err: any) {
+      console.error('[Image Gen] ModelScope Qwen failed:', err.message);
+    }
+  }
+
+  // 策略2: ModelScope Z-Image (次选)
   if (msKey) {
     try {
       console.log('[Image Gen] Trying ModelScope Z-Image...');
       const result = await Promise.race([
         callModelScopeImage(msKey, enhancedPrompt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope timeout (90s)')), 90000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ModelScope Z-Image timeout (60s)')), 60000))
       ]) as any;
       if (result.url) {
-        console.log('[Image Gen] ModelScope success');
+        console.log('[Image Gen] ModelScope Z-Image success');
         return c.json({ generatedImages: [{ image: { url: result.url } }] });
       }
     } catch (err: any) {
-      console.error('[Image Gen] ModelScope failed:', err.message);
+      console.error('[Image Gen] ModelScope Z-Image failed:', err.message);
     }
   }
 
-  // 策略2: Agnes AI 兜底
+  // 策略3: Agnes AI 兜底
   const agnesKey = c.env.AGNES_AI_API_KEY;
   if (agnesKey) {
     try {
