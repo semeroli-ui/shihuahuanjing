@@ -23,10 +23,22 @@ export class PoeticService {
 
   // 2. 调用视频生成 (走 Worker 代理，绕过 SSL 525)
   async generateVideo(prompt: string) {
+    // 水墨丹青专用质量后缀（替换掉不兼容的 cinematic/4k/color grading/sharp 词汇）
+    const inkWashSuffix = (
+      ' traditional Chinese ink wash painting on aged rice paper, ' +
+      'visible brush strokes and ink bleeding on paper texture, ' +
+      'ink gradients from deep black to pale grey wash, ' +
+      'atmospheric fog, mist and clouds, ' +
+      'no photographic elements, no CGI, no cinema camera, ' +
+      'poetic and meditative mood, gentle motion, ' +
+      'brush ink animation style, masterpiece'
+    );
+    const enhancedPrompt = prompt + inkWashSuffix;
+
     const res = await fetch(`${this.WORKER_PROXY_URL}/v1/videos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt: enhancedPrompt })
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({})) as any;

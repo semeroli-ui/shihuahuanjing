@@ -184,8 +184,16 @@ async function callAgnesAIImage(apiKey: string, prompt: string): Promise<{ b64_j
  * Step 2: GET /v1/videos/{id} → { status, progress, video_url }
  */
 async function callAgnesAIVideo(apiKey: string, prompt: string): Promise<any> {
-  // 质量增强后缀：确保视频高清、锐利
-  const qualitySuffix = ', cinematic high definition, sharp details, clear visuals, 4k quality, professional color grading, best quality';
+  // 水墨丹青专用质量后缀（替换掉不兼容的 cinematic/4k/color grading/sharp 词汇）
+  const qualitySuffix = (
+    ', traditional Chinese ink wash painting on aged rice paper, ' +
+    'visible brush strokes and ink bleeding on paper texture, ' +
+    'ink gradients from deep black to pale grey wash, ' +
+    'atmospheric fog, mist and clouds, ' +
+    'no photographic elements, no CGI, no cinema camera, ' +
+    'poetic and meditative mood, gentle motion, ' +
+    'brush ink animation style, masterpiece'
+  );
   const enhancedPrompt = prompt + qualitySuffix;
 
   const response = await fetch(`${AGNES_AI_BASE}/v1/videos`, {
