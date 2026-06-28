@@ -939,8 +939,13 @@ export default function App() {
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full relative">
                       {videoUrl.startsWith('blob:') ? (
                         <>
-                          <video src={videoUrl} controls autoPlay loop className="w-full h-full object-contain" />
-                          <button onClick={downloadVideo} className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-0 group-hover:opacity-100 transition-all shadow-2xl">
+                          {/* 手机端 Chrome 禁止无 muted 的 autoPlay，loop 会导致内存崩溃 */}
+                          <video src={videoUrl} controls muted playsInline className="w-full h-full object-contain" />
+                          {/* 手机端无 hover，始终显示下载按钮 */}
+                          <button
+                            onClick={downloadVideo}
+                            className="absolute bottom-8 right-8 p-4 bg-white/10 hover:bg-zen-vermilion backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shadow-2xl"
+                          >
                             <Download size={24} />
                           </button>
                         </>
