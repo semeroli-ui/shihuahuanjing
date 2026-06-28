@@ -358,8 +358,18 @@ export default function App() {
                 const contentType = dlRes.headers.get('Content-Type') || 'video/mp4';
                 const blob = await dlRes.blob();
                 console.log('Video downloaded via Worker, blob size:', blob.size, 'type:', contentType);
-                setVideoUrl(URL.createObjectURL(blob));
-                setVideoStatus('生成成功!');
+
+                // 手机端内存有限，大视频用 blob URL 播放会崩溃
+                // 超过 10MB 直接给下载链接，不创建 blob URL
+                const MAX_BLOB_PLAYBACK_SIZE = 10 * 1024 * 1024; // 10MB
+                if (blob.size > MAX_BLOB_PLAYBACK_SIZE) {
+                  console.warn('Video blob too large for inline playback, showing download link. size:', blob.size);
+                  setVideoUrl(videoUrl); // 保存原始 URL，触发下载按钮 UI
+                  setVideoStatus('视频已生成(文件较大，请下载后观看)');
+                } else {
+                  setVideoUrl(URL.createObjectURL(blob));
+                  setVideoStatus('生成成功!');
+                }
               } catch (dlErr: any) {
                 console.error('Worker proxy download failed:', dlErr);
                 // Worker 代理也失败 → fallback:显示原始链接让用户自行下载
@@ -941,7 +951,20 @@ export default function App() {
                       {videoUrl.startsWith('blob:') ? (
                         <>
                           {/* 手机端 Chrome 禁止无 muted 的 autoPlay，loop 会导致内存崩溃 */}
-                          <video src={videoUrl} controls muted playsInline className="w-full h-full object-contain" />
+                          {/* 加 onError 容错：播放失败时报错并显示下载按钮 */}
+                          <video
+                            src={videoUrl}
+                            controls
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              console.error('Video playback error, falling back to download', e);
+                              // 播放失败，触发下载 UI
+                              setVideoUrl(videoUrl);
+                            }}
+                          />
                           {/* 手机端无 hover，始终显示下载按钮 */}
                           <button
                             onClick={downloadVideo}
