@@ -652,7 +652,8 @@ export default function App() {
                       <p className="serif-text text-lg mb-4 leading-relaxed line-clamp-4">{item.poem}</p>
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] text-zen-ink/30">{item.date}</span>
-                        <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* 手机端无 hover，始终显示按钮；桌面端 hover 显示 */}
+                        <div className="flex gap-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <button onClick={() => loadFromLibrary(item)} className="text-xs text-zen-accent hover:underline">研墨</button>
                           <button onClick={() => removeFromLibrary(item.id)} className="text-xs text-rose-400 hover:text-rose-600">
                             <Trash2 size={14} />
